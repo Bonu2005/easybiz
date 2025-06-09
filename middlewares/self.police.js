@@ -6,7 +6,7 @@ function selfPolice(roles) {
    return (req, res, next) => {
 
       let { id } = req.params;
-      let token = req.header("Authorization")
+      let token = req.header("Authorization")?.split(" ")[1]
       try {
          let user = jwt.verify(token, process.env.accesstoken)
          req.user = user
