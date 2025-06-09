@@ -1,0 +1,156 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UsersStatus {
+  PENDING
+  ACTIVE
+  BANNED
+}
+
+model Users {
+  id             String           @id @default(uuid())
+  username       String
+  email          String           @unique
+  password       String
+  roleId         String
+  image          String           @default("image.png")
+  telegram       String?          @unique
+  facebook       String?          @unique
+  instagram      String?          @unique
+  role           Role             @relation(fields: [roleId], references: [id])
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @default(now()) @updatedAt
+  was_online     DateTime         @default(now())
+  status         UsersStatus      @default(PENDING)
+  Ban            Ban[]
+  Activation     Activation[]
+  Reset_Password Reset_Password[]
+  UserRole       UserRole[]
+  Sessions       Sessions[]
+  Projects       Projects[]
+}
+
+model Role {
+  id       String     @id @default(uuid())
+  name     String     @unique
+  UserRole UserRole[]
+  Users    Users[]
+}
+
+model UserRole {
+  id     String @id @default(uuid())
+  userId String
+  roleId String
+  user   Users  @relation(fields: [userId], references: [id])
+  role   Role   @relation(fields: [roleId], references: [id])
+}
+
+model Ban {
+  id         String   @id @default(uuid())
+  userId     String
+  user       Users    @relation(fields: [userId], references: [id])
+  ban_reason String
+  ban_start  DateTime @default(now())
+  ban_end    DateTime @default(now()) @updatedAt
+}
+
+model Activation {
+  id                String      @id @default(uuid())
+  userId            String
+  activation_status UsersStatus
+  user              Users       @relation(fields: [userId], references: [id])
+  createdAt         DateTime    @default(now())
+}
+
+model Reset_Password {
+  id          String   @id @default(uuid())
+  userId      String
+  email       String   @unique
+  otpVerified Boolean  @default(false)
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  user        Users    @relation(fields: [userId], references: [id])
+}
+
+model Sessions {
+  id         String    @id @default(uuid())
+  ip         String
+  location   String?
+  info       String
+  date       DateTime  @default(now())
+  endDate    DateTime?
+  userId     String
+  user       Users     @relation(fields: [userId], references: [id])
+  deviceType String
+  browser    String
+}
+
+model Projects {
+  id          String   @id @default(uuid())
+  userId      String
+  user        Users    @relation(fields: [userId], references: [id])
+  name        String
+  description String
+  created_at  DateTime
+  updated_at  DateTime @default(now()) @updatedAt
+  Pages       Pages[]
+}
+
+model Pages {
+  id              String   @id @default(uuid())
+  projectId       String
+  projects        Projects @relation(fields: [projectId], references: [id])
+  title           String
+  slug            String
+  status          String
+  seo_title       String
+  seo_description String
+  created_at      DateTime
+  updated_at      DateTime @default(now()) @updatedAt
+  Blocks          Blocks[]
+}
+
+model Blocks {
+  id      String @id @default(uuid())
+  pageId  String
+  page    Pages  @relation(fields: [pageId], references: [id])
+  type    String
+  content Json
+  order   String
+}
+
+model Templates {
+  id                String              @id @default(uuid())
+  name              String
+  preview_image     String
+  config            String
+  Project_Templates Project_Templates[]
+}
+
+model Project_Templates {
+  id          String    @id @default(uuid())
+  templatesId String
+  templates   Templates @relation(fields: [templatesId], references: [id])
+  used_at     DateTime  @default(now())
+}
+
+model Domains {
+  id String @id @default(uuid())
+  domain_name String
+  verified String
+  dns_config String
+
+}

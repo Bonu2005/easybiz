@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Sessions" ALTER COLUMN "info" SET DATA TYPE TEXT;
