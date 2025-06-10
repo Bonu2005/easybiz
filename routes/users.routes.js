@@ -928,7 +928,7 @@ Router.get("/get-my-data", middleWare, (req, res) => {
  * @swagger
  * /users/update-self/{id}:
  *   patch:
- *     summary: Обновление собственного профиля пользователя (username)
+ *     summary: Обновление собственного профиля пользователя (username, telegram, facebook, instagram)
  *     tags:
  *       - Users
  *     security:
@@ -948,15 +948,22 @@ Router.get("/get-my-data", middleWare, (req, res) => {
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - username
  *             properties:
  *               username:
  *                 type: string
  *                 example: "new_username"
+ *               telegram:
+ *                 type: string
+ *                 example: "@new_telegram"
+ *               facebook:
+ *                 type: string
+ *                 example: "https://facebook.com/new.profile"
+ *               instagram:
+ *                 type: string
+ *                 example: "https://instagram.com/new.profile"
  *     responses:
  *       200:
- *         description: Username успешно обновлен
+ *         description: Профиль успешно обновлён
  *         content:
  *           application/json:
  *             schema:
@@ -964,7 +971,7 @@ Router.get("/get-my-data", middleWare, (req, res) => {
  *               properties:
  *                 message:
  *                   type: string
- *                   example: "Username updated succesfully"
+ *                   example: "User profile updated successfully"
  *                 updated_user:
  *                   type: object
  *                   properties:
@@ -974,6 +981,15 @@ Router.get("/get-my-data", middleWare, (req, res) => {
  *                     username:
  *                       type: string
  *                       example: "new_username"
+ *                     telegram:
+ *                       type: string
+ *                       example: "@new_telegram"
+ *                     facebook:
+ *                       type: string
+ *                       example: "https://facebook.com/new.profile"
+ *                     instagram:
+ *                       type: string
+ *                       example: "https://instagram.com/new.profile"
  *                     email:
  *                       type: string
  *                       example: "user@example.com"
@@ -992,10 +1008,10 @@ Router.get("/get-my-data", middleWare, (req, res) => {
  *               properties:
  *                 message:
  *                   type: string
- *                   example: "Unexpected error"
+ *                   example: "Validation error"
  *                 error:
  *                   type: string
- *                   example: "Error message here"
+ *                   example: "telegram must be a string"
  *       401:
  *         description: Неавторизован или нет доступа
  *         content:
@@ -1007,6 +1023,7 @@ Router.get("/get-my-data", middleWare, (req, res) => {
  *                   type: string
  *                   example: "Unauthorized"
  */
+
 Router.patch("/update-self/:id", middleWare, selfPolice(["USER", "ADMIN","SUPER ADMIN"]), (req, res) => {
     Users.update_user(req, res)
 })

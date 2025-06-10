@@ -80,7 +80,6 @@ class Users {
         }
     }
 
-
     async send_otp(req, res) {
         try {
             const options = {
@@ -438,8 +437,7 @@ class Users {
             if (error) {
                 return res.status(400).json({ message: error.message });
             }
-            let { username } = req.body;
-            let updated_user = await prisma.users.update({ where: { id: req.user.id }, data: { username } })
+            let updated_user = await prisma.users.update({ where: { id: req.user.id }, data: { ...req.body } })
             return res.status(200).json({ message: "Username updated succesfully", updated_user })
         } catch (error) {
             return res.status(400).json({ message: "Unexpected error", error: error.message })
