@@ -1,0 +1,1725 @@
+openapi: 3.0.0
+info:
+  title: Express API
+  version: 1.0.0
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - bearerAuth: []
+
+
+paths:
+  /users:
+    get:
+      summary: Получить список пользователей
+      description: Возвращает всех пользователей с их ролями, общее количество и количество страниц.
+      tags:
+        - Users
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          example: 1
+                        name:
+                          type: string
+                          example: Ivan
+                        email:
+                          type: string
+                          example: ivan@example.com
+                        role:
+                          type: object
+                          properties:
+                            id:
+                              type: integer
+                              example: 1
+                            name:
+                              type: string
+                              example: Admin
+                  total_count:
+                    type: integer
+                    example: 100
+                  total_page:
+                    type: integer
+                    example: 5
+        '400':
+          description: Ошибка при получении пользователей
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unexpected error!
+                  error:
+                    type: string
+                    example: Cannot read properties of undefined
+
+  /users/sign-up:
+    post:
+      summary: Регистрация нового пользователя
+      description: Создаёт нового пользователя после валидации данных и проверки уникальности email, username и социальных сетей.
+      tags:
+        - Users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - email
+                - password
+                - roleId
+              properties:
+                username:
+                  type: string
+                  example: johndoe
+                email:
+                  type: string
+                  example: johndoe@example.com
+                password:
+                  type: string
+                  minLength: 6
+                  maxLength: 10
+                  example: MyPass1
+                roleId:
+                  type: string
+                  format: uuid
+                  example: 123e4567-e89b-12d3-a456-426614174000
+                telegram:
+                  type: string
+                  example: johndoe
+                facebook:
+                  type: string
+                  example: johndoe.fb
+                instagram:
+                  type: string
+                  example: johndoe.ig
+                image:
+                  type: string
+                  example: https://example.com/profile.jpg
+      responses:
+        '200':
+          description: Пользователь успешно зарегистрирован, требуется подтверждение аккаунта
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Verify your account
+                  data:
+                    type: object
+                    properties:
+                      username:
+                        type: string
+                        example: johndoe
+                      email:
+                        type: string
+                        example: johndoe@example.com
+        '400':
+          description: Ошибка валидации или пользователь уже существует
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User with this email or username already exists.
+                  error:
+                    type: string
+                    example: Unexpected error!
+        '404':
+          description: Указанная роль не найдена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Role with this id not found.
+
+  /users/send-otp:
+    post:
+      summary: Отправка OTP-кода на почту пользователя
+      description: Генерирует и сохраняет одноразовый OTP-код, если пользователь существует и не превышен лимит. Старые коды удаляются. Новый код отправляется на email.
+      tags:
+        - Users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - to
+                - subject
+              properties:
+                to:
+                  type: string
+                  format: email
+                  example: user@example.com
+                subject:
+                  type: string
+                  example: OTP Verification
+      responses:
+        '200':
+          description: OTP успешно отправлен на указанную почту
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: OTP sent successfully
+        '400':
+          description: Не передан email или subject
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Email and subject are required!
+        '404':
+          description: Пользователь с указанной почтой не найден
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User with this email not found
+        '429':
+          description: OTP уже был отправлен недавно, ещё не истёк
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: OTP already sent recently. Please wait until it expires.
+                  expiresAt:
+                    type: string
+                    format: date-time
+                    example: 2025-06-11T10:12:00.000Z
+        '500':
+          description: Неожиданная ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unexpected error. Please try again later.
+
+  /users/verify-otp:
+    post:
+      summary: Верификация OTP-кода пользователя
+      description: Проверяет действующий OTP-код по email и активирует учётную запись. Удаляет использованный код.
+      tags:
+        - Users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - otp_code
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                otp_code:
+                  type: string
+                  example: "123456"
+      responses:
+        '200':
+          description: Аккаунт успешно активирован
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Account successfully activated
+        '400':
+          description: Неверный код, истёкший код или неполные данные
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Invalid OTP code
+        '404':
+          description: Пользователь с такой почтой не найден
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User with this email not found
+        '500':
+          description: Неожиданная ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unexpected error. Please try again later.
+
+  /users/sign-in:
+    post:
+      summary: Авторизация пользователя
+      description: Авторизует пользователя по email и паролю, создаёт сессию, устанавливает refresh токен в куку и возвращает access токен.
+      tags:
+        - Users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  example: MySecret123
+      responses:
+        '200':
+          description: Успешный вход
+          headers:
+            Set-Cookie:
+              description: Устанавливает refresh_token в куку
+              schema:
+                type: string
+                example: refresh_token=abc.def.ghi; HttpOnly
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Successfully login!
+                  accessToken:
+                    type: string
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6...
+        '403':
+          description: Неверный пароль
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Invalid credentials
+        '404':
+          description: Пользователь или роль не найдены
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User with this email not found
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unexpected error. Please try again later.
+
+  /users/get-my-data:
+    get:
+      summary: Получить данные текущего пользователя
+      description: Возвращает подробную информацию о текущем пользователе, включая сессии, блокировки и статус активации. Требуется авторизация.
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Данные пользователя успешно получены
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  email:
+                    type: string
+                    format: email
+                  username:
+                    type: string
+                  status:
+                    type: string
+                    example: ACTIVE
+                  Sessions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        ip:
+                          type: string
+                        deviceType:
+                          type: string
+                        browser:
+                          type: string
+                        date:
+                          type: string
+                          format: date-time
+                        endDate:
+                          type: string
+                          format: date-time
+                  Ban:
+                    type: object
+                    nullable: true
+                    properties:
+                      id:
+                        type: string
+                      ban_reason:
+                        type: string
+                  Activation:
+                    type: object
+                    nullable: true
+                    properties:
+                      id:
+                        type: string
+                      activation_status:
+                        type: string
+        '401':
+          description: Пользователь не авторизован или сессия недействительна
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: not authorized
+        '500':
+          description: Ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unexpected error. Please try again later.
+
+  /users/update-self/{id}:
+    patch:
+      summary: Обновить свои данные
+      description: Обновляет профиль пользователя по его ID. Доступ разрешён ролям USER, ADMIN, SUPER ADMIN. Требуется авторизация.
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID пользователя, которого нужно обновить
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                  example: bonu_ham
+                telegram:
+                  type: string
+                  example: bonu_ham
+                facebook:
+                  type: string
+                  example: bonu.fb
+                instagram:
+                  type: string
+                  example: bonu.ig
+  
+      responses:
+        '200':
+          description: Данные пользователя успешно обновлены
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Username updated successfully
+                  updated_user:
+                    type: object
+        '400':
+          description: Ошибка валидации
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Invalid input data
+        '401':
+          description: Неавторизованный доступ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unauthorized
+        '500':
+          description: Неожиданная ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unexpected error. Please try again later.
+
+  /users/send-otp-reset:
+    post:
+      summary: Отправка OTP-кода для восстановления пароля
+      description: Отправляет одноразовый код (OTP) на указанную почту, если пользователь существует. Блокирует повторную отправку до истечения срока действия.
+      tags:
+        - Users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - to
+                - subject
+              properties:
+                to:
+                  type: string
+                  format: email
+                  example: user@example.com
+                subject:
+                  type: string
+                  example: Password Reset Request
+      responses:
+        '200':
+          description: OTP отправлен успешно
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: OTP sent successfully
+        '403':
+          description: Не указана почта или тема письма
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Email and subject are required!
+        '404':
+          description: Пользователь с такой почтой не найден
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User not found
+        '429':
+          description: OTP уже был отправлен недавно
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: OTP already sent recently. Please wait until it expires before requesting a new one.
+                  expiresAt:
+                    type: string
+                    format: date-time
+        '500':
+          description: Неожиданная ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unexpected error. Please try again later.
+
+  /users/verify-otp-reset:
+    post:
+      summary: Подтверждение OTP-кода для сброса пароля
+      description: Проверяет правильность введённого OTP-кода. Если всё верно — разрешает сброс пароля.
+      tags:
+        - Users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - otp_code
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                otp_code:
+                  type: string
+                  example: "123456"
+      responses:
+        '200':
+          description: OTP успешно подтверждён
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: OTP verified. You can now reset your password.
+        '400':
+          description: Неверный или просроченный код
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Wrong OTP code
+        '404':
+          description: Пользователь не найден
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User not found
+        '500':
+          description: Неожиданная ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unexpected error. Please try again later.
+
+  /users/reset-password:
+    post:
+      summary: Сброс пароля после подтверждения OTP
+      description: Позволяет пользователю задать новый пароль после подтверждённого OTP. Требуется валидация пароля и проверка, что OTP был подтверждён и не истёк.
+      tags:
+        - Users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - newPassword
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                newPassword:
+                  type: string
+                  example: NewPass123
+      responses:
+        '200':
+          description: Пароль успешно обновлён
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Password successfully reset
+        '400':
+          description: Ошибка валидации или слабый пароль
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Password should have at least one uppercase, one lowercase, and one number.
+        '403':
+          description: OTP не подтверждён или срок действия истёк
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: OTP not verified or expired
+        '404':
+          description: Пользователь не найден
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User not found
+        '500':
+          description: Неожиданная ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unexpected error. Please try again later.
+
+  /users/logout:
+    post:
+      summary: Logout user and clear refresh token
+      tags:
+        - Users
+      responses:
+        '200':
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Logged out successfully
+        '500':
+          description: Logout failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Logout failed. Try again later.
+
+
+
+
+  /users/ban-user:
+    post:
+      summary: Заблокировать пользователя
+      description: Админ может заблокировать пользователя по ID. Пользователь получает статус "BANNED" и записывается причина бана.
+      tags:
+        - Manage Users
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - userId
+                - ban_reason
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+                  example: 123e4567-e89b-12d3-a456-426614174000
+                ban_reason:
+                  type: string
+                  example: Нарушение правил сервиса
+      responses:
+        '200':
+          description: Пользователь успешно заблокирован
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User successfully banned
+        '400':
+          description: Ошибка валидации входных данных
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: userId is required
+        '403':
+          description: Пользователь уже заблокирован или недостаточно прав
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User is already banned
+        '404':
+          description: Пользователь не найден
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User not found
+        '500':
+          description: Неожиданная ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unexpected error. Please try again later.
+
+  /users/activate-user:
+    post:
+      summary: Активировать пользователя вручную
+      description: Админ или супер-админ активирует пользователя по ID, если он ещё не активен.
+      tags:
+        - Manage Users
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - userId
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+                  example: 123e4567-e89b-12d3-a456-426614174000
+      responses:
+        '200':
+          description: Пользователь успешно активирован
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User successfully activated
+        '400':
+          description: Ошибка валидации запроса
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: userId is required
+        '403':
+          description: Пользователь уже активен или активирован ранее
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User already active
+        '404':
+          description: Пользователь не найден
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User not found
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unexpected error. Please try again later.
+
+  /users/refresh-token:
+    post:
+      summary: Обновить access токен
+      description: Возвращает новый access токен на основе refresh токена из cookie. Обновляет поле was_online у пользователя.
+      tags:
+        - Manage Users
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Access токен успешно обновлён
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6...
+                  updateUser:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      email:
+                        type: string
+                      was_online:
+                        type: string
+                        format: date-time
+        '401':
+          description: Refresh токен отсутствует, просрочен или некорректен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Refresh token expired, please sign in again.
+        '500':
+          description: Неожиданная ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unexpected error. Please try again later.
+
+
+
+
+  /users/get-my-sessions:
+    get:
+      summary: Получить список своих сессий
+      description: Возвращает все сессии текущего авторизованного пользователя. Требуется валидная сессия и access token.
+      tags:
+        - Session
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Сессии успешно получены
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        ip:
+                          type: string
+                          example: 192.168.1.1
+                        location:
+                          type: string
+                          nullable: true
+                          example: Tashkent, Uzbekistan
+                        info:
+                          type: string
+                          example: Desktop, Windows, Chrome, вход 2025-06-11 14:22
+                        deviceType:
+                          type: string
+                          example: desktop
+                        browser:
+                          type: string
+                          example: Chrome
+                        date:
+                          type: string
+                          format: date-time
+                        endDate:
+                          type: string
+                          format: date-time
+                          nullable: true
+        '401':
+          description: Пользователь не авторизован или сессия недействительна
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unauthorized
+        '500':
+          description: Ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unexpected error. Please try again later.
+
+  /users/del-my-sessions/{id}:
+    delete:
+      summary: Удалить свою сессию
+      description: Удаляет конкретную сессию пользователя по ID. Если сессия принадлежит текущему пользователю, она удаляется, а статус пользователя меняется на `PENDING`.
+      tags:
+        - Session
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          description: ID удаляемой сессии
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Сессия успешно удалена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Session deleted
+        '403':
+          description: Пользователь не имеет доступа к этой сессии
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Not authorized to delete this session
+        '404':
+          description: Сессия не найдена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Session not found
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unexpected error. Please try again later.
+
+  /users/session-end:
+    patch:
+      summary: Завершить активную сессию вручную
+      description: Завершает пользовательскую сессию, устанавливая время завершения. Доступно только для ADMIN и SUPER ADMIN.
+      tags:
+        - Session
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - sessionId
+                - endDate
+              properties:
+                sessionId:
+                  type: string
+                  format: uuid
+                  example: 123e4567-e89b-12d3-a456-426614174000
+                endDate:
+                  type: string
+                  format: date-time
+                  example: 2025-06-11T15:00:00.000Z
+      responses:
+        '200':
+          description: Сессия успешно завершена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Session ended
+                  session:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      endDate:
+                        type: string
+                        format: date-time
+        '400':
+          description: Ошибка валидации или логики (например, сессия уже завершена)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: End time must be after start time
+        '404':
+          description: Сессия не найдена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Session not found
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unexpected error. Please try again later.
+
+
+
+  /users/upload:
+    post:
+      summary: Загрузить изображение профиля
+      description: Принимает файл изображения в формате jpeg, png или webp и сохраняет его как аватар пользователя.
+      tags:
+        - Uploads
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - image
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: Изображение профиля (jpeg, png, webp)
+      responses:
+        '201':
+          description: Файл успешно загружен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: string
+                    example: http://localhost:3300/users/image/example.jpg
+        '400':
+          description: Неверный формат файла
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Можно загружать только изображения (jpeg, png, webp)
+        '500':
+          description: Неожиданная ошибка при загрузке
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unexpected error. Please try again later.
+
+
+
+
+  /users/roles:
+    get:
+      summary: Получить список всех ролей
+      tags:
+        - Roles
+      responses:
+        '200':
+          description: Успешное получение списка ролей
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        name:
+                          type: string
+                          example: ADMIN
+        '500':
+          description: Ошибка сервера
+
+  /users/role/{id}:
+    get:
+      summary: Получить роль по ID
+      tags:
+        - Roles
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Роль найдена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                        example: ADMIN
+        '404':
+          description: Роль не найдена
+        '500':
+          description: Ошибка сервера
+
+  /users/role:
+    post:
+      summary: Создать новую роль
+      tags:
+        - Roles
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  example: MANAGER
+      responses:
+        '200':
+          description: Роль успешно создана
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                        example: MANAGER
+        '403':
+          description: Ошибка валидации или недостаточно прав
+        '500':
+          description: Ошибка сервера
+
+  /users/role-update/{id}:
+    patch:
+      summary: Обновить роль по ID
+      tags:
+        - Roles
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  example: MODERATOR
+      responses:
+        '200':
+          description: Роль успешно обновлена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Role updated successfully
+                  data:
+                    type: object
+        '403':
+          description: Ошибка валидации или нет прав
+        '404':
+          description: Роль не найдена
+        '500':
+          description: Ошибка сервера
+
+  /users/role-delete/{id}:
+    delete:
+      summary: Удалить роль по ID
+      tags:
+        - Roles
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Роль успешно удалена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Role deleted successfully
+                  data:
+                    type: object
+        '404':
+          description: Роль не найдена
+        '500':
+          description: Ошибка сервера
+
+
+
+  /users/average-time-statistics/{period}:
+   get:
+    summary: Get average session time statistics
+    tags:
+      - Statistics
+    parameters:
+      - name: period
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [day, month, year, custom]
+        description: Period to filter sessions
+      - name: day
+        in: query
+        schema:
+          type: integer
+        description: Used with custom period (e.g., 2)
+      - name: month
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 12
+        description: Used with custom period (e.g., 06 )
+      - name: year
+        in: query
+        schema:
+          type: integer
+        description: Used with custom period (e.g., 2025)
+    responses:
+      '200':
+        description: Average session time returned
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                averageSessionTime:
+                  type: string
+                  example: "1h 32m"
+                totalSessions:
+                  type: integer
+      '404':
+        description: No completed sessions found
+      '500':
+        description: Internal server error
+
+
+  /users/browsers_statistics/{period}:
+   get:
+    summary: Get statistics of used browsers
+    tags:
+      - Statistics
+    parameters:
+      - name: period
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [day, month, year, custom]
+      - name: day
+        in: query
+        schema:
+          type: integer
+          format: date
+        description: Used with custom period
+      - name: month
+        in: query
+        schema:
+          type: integer
+        description: Used with custom period
+      - name: year
+        in: query
+        schema:
+          type: integer
+        description: Used with custom period
+    responses:
+      '200':
+        description: Browsers statistics with percentages
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  browser:
+                    type: string
+                  count:
+                    type: integer
+                  percentage:
+                    type: string
+                    example: "25%"
+      '500':
+        description: Internal server error
+
+
+  /users/devices-statistics/{period}:
+   get:
+    summary: Get statistics of device types
+    tags:
+      - Statistics
+    parameters:
+      - name: period
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [day, month, year, custom]
+      - name: day
+        in: query
+        schema:
+          type: integer
+      - name: month
+        in: query
+        schema:
+          type: integer
+      - name: year
+        in: query
+        schema:
+          type: integer
+    responses:
+      '200':
+        description: Devices statistics with percentages
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  deviceType:
+                    type: string
+                  count:
+                    type: integer
+                  percentage:
+                    type: string
+                    example: "40%"
+      '500':
+        description: Internal server error
+
+
+  /users/user-statistics/{period}:
+    get:
+      summary: Get active user statistics
+      tags:
+        - Statistics
+      parameters:
+        - name: period
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [day, month, year, custom]
+        - name: day
+          in: query
+          required: false
+          schema:
+            type: integer
+            example: "12"
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: integer
+            example: 6
+            minimum: 1
+            maximum: 12
+        - name: year
+          in: query
+          required: false
+          schema:
+            type: integer
+            example: 2025
+      responses:
+        '200':
+          description: User count and page count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      total_count:
+                        type: integer
+                        example: 123
+                      total_page:
+                        type: integer
+                        example: 5
+        '500':
+          description: Internal server error
+
+
+  /users/get-logs:
+    get:
+      summary: Retrieve request logs with pagination
+      description: Returns a paginated list of request logs, sorted by newest first.
+      tags:
+        - Logs
+      parameters:
+        - name: page
+          in: query
+          description: Page number (default is 1)
+          required: false
+          schema:
+            type: integer
+            example: 1
+        - name: limit
+          in: query
+          description: Number of logs per page (default is 50)
+          required: false
+          schema:
+            type: integer
+            example: 50
+      responses:
+        '200':
+          description: A list of request logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          example: 1
+                        method:
+                          type: string
+                          example: GET
+                        url:
+                          type: string
+                          example: /api/users
+                        ip:
+                          type: string
+                          example: 127.0.0.1
+                        userAgent:
+                          type: string
+                          example: Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+                        userId:
+                          type: integer
+                          nullable: true
+                          example: 42
+                        responseCode:
+                          type: integer
+                          example: 200
+                        responseTimeMs:
+                          type: integer
+                          example: 123
+                        createdAt:
+                          type: string
+                          format: date-time
+                          example: 2025-06-11T12:34:56.000Z
+                  meta:
+                    type: object
+                    properties:
+                      totalLogs:
+                        type: integer
+                        example: 153
+                      currentPage:
+                        type: integer
+                        example: 1
+                      totalPages:
+                        type: integer
+                        example: 4
+                      limitPerPage:
+                        type: integer
+                        example: 50
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: Failed to retrieve logs. Please try again later.

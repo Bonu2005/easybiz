@@ -12,6 +12,7 @@ const isStrongPassword = require("../validations/password.validation");
 const DeviceDetektor = require("device-detector-js");
 const checkSession = require("../composables/utils/check_sessions.init");
 const updateSelfValidation = require("../validations/updateSelf.validation");
+const getDateRange = require('../composables/utils/statistics_date.helper');
 
 otp.totp.options = { step: 120, digits: 6 };
 
@@ -28,7 +29,8 @@ class Users {
             let total_page = Math.ceil(find_users_count / 20)
             return res.status(200).json({ data: find_users, total_count: find_users_count, total_page })
         } catch (error) {
-            return res.status(400).json({ message: "Unexpected error!", error: error.message })
+            console.error("Get users error:", error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
 
@@ -55,86 +57,153 @@ class Users {
                 return res.status(404).json({ message: "Role with this id  not found." });
             }
             if (exist_user) {
-                return res.status(400).json({ message: "User with this email or username already exists." });
+                return res.status(400).json({ message: "User with this email already exists." });
             }
 
-            let find_media = await prisma.users.findFirst({
-                where: {
-                    OR: [
-                        { telegram },
-                        { facebook },
-                        { instagram }
-                    ]
-                }
-            });
+            let mediaConflicts = [];
 
-            if (find_media) {
-                return res.status(400).json({ message: "User with this telegram,facebook or instagram already exists." });
+            if (telegram) {
+                const existingTelegram = await prisma.users.findFirst({ where: { telegram } });
+                if (existingTelegram) mediaConflicts.push("telegram");
             }
 
-            let hash_pass = bcrypt.hashSync(password, 10);
+            if (facebook) {
+                const existingFacebook = await prisma.users.findFirst({ where: { facebook } });
+                if (existingFacebook) mediaConflicts.push("facebook");
+            }
+
+            if (instagram) {
+                const existingInstagram = await prisma.users.findFirst({ where: { instagram } });
+                if (existingInstagram) mediaConflicts.push("instagram");
+            }
+
+            if (mediaConflicts.length > 0) {
+                return res.status(400).json({
+                    message: `User with this ${mediaConflicts.join(", ")} already exists.`,
+                });
+            }
+
+
+            let hash_pass = await bcrypt.hash(password, 10);
             await prisma.users.create({ data: { username, email, password: hash_pass, roleId: exist_role.id, telegram, facebook, instagram } });
             return res.status(200).json({ message: "Verify your account", data: { username, email } });
         } catch (error) {
-            return res.status(400).json({ message: "Unexpected error!", error: error.message })
+            console.error("Sign Up error:", error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
 
     async send_otp(req, res) {
         try {
-            const options = {
-                to: req.body.to,
-                subject: req.body.subject,
-            }
-            const to = options.to
-            for (const key in options) {
-                const value = options[key];
+            const { to, subject } = req.body;
 
-                if (!value) return res.status(403).json({ error: `${key} is required!` });
+            if (!to || !subject) {
+                return res.status(400).json({ message: "Email and subject are required!" });
             }
-            let exist_user = await prisma.users.findFirst({
-                where: { email: to }
-            });
 
-            if (!exist_user) {
+            const user = await prisma.users.findUnique({ where: { email: to } });
+
+            if (!user) {
                 return res.status(404).json({ message: "User with this email not found" });
             }
 
-            let secret = `${stringToHash(options.to)}`;
+            const existingOtp = await prisma.email_verification.findFirst({
+                where: {
+                    email: to,
+                    expiresAt: { gt: new Date() }, 
+                },
+                orderBy: { createdAt: 'desc' }
+            });
 
-            const otp_code = otp.totp.generate(secret);
-
-            const parameters = {
-                digit: otp_code,
-                expires_at: otp.totp.options.step,
-                secret
+            if (existingOtp) {
+                return res.status(429).json({
+                    message: "OTP already sent recently. Please wait until it expires.",
+                    expiresAt: existingOtp.expiresAt,
+                });
             }
 
-            return otp_mailer(options, res, parameters);
-        } catch (error) {
-            return res.status(400).json({ message: "Unexpected error", error: error.message })
-        }
 
+            await prisma.email_verification.deleteMany({
+                where: { email: to }
+            });
+
+    
+            const secret = stringToHash(to);
+            const otpCode = otp.totp.generate(secret);
+
+            const expiresInSeconds = 180; 
+            const expiresAt = new Date(Date.now() + expiresInSeconds * 1000);
+
+       
+            await prisma.email_verification.create({
+                data: {
+                    userId: user.id,
+                    email: to,
+                    otpCode,
+                    expiresAt: expiresAt,
+                }
+            });
+
+           
+            const parameters = {
+                digit: otpCode,
+                expires_at: expiresInSeconds,
+
+            };
+
+            return otp_mailer({ to, subject }, res, parameters);
+
+        } catch (error) {
+            console.error("Send OTP error:", error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
+        }
     }
 
     async verify_otp(req, res) {
         try {
-            const { otp_code, email } = req.body
-            let exist_user = await prisma.users.findFirst({
-                where: { email }
-            });
+            const { otp_code, email } = req.body;
 
-            if (!exist_user) {
+            if (!otp_code || !email) {
+                return res.status(400).json({ message: "OTP code and email are required" });
+            }
+
+            const user = await prisma.users.findUnique({ where: { email } });
+
+            if (!user) {
                 return res.status(404).json({ message: "User with this email not found" });
             }
-            const match = otp.totp.check(otp_code, stringToHash(email))
-            if (match) {
-                await prisma.users.update({ where: { email }, data: { status: "ACTIVE" } })
-                return res.status(200).json({ message: "Account successfully activated" })
+
+            const otpRequest = await prisma.email_verification.findFirst({
+                where: {
+                    email,
+                    expiresAt: { gt: new Date() }
+                },
+                orderBy: { createdAt: 'desc' }
+            });
+
+            if (!otpRequest) {
+                return res.status(400).json({ message: "No active OTP found or OTP expired" });
             }
-            return res.status(400).json({ message: "Wrong OTP code" })
+
+            if (otpRequest.otpCode != otp_code) {
+                return res.status(400).json({ message: "Invalid OTP code" });
+            }
+
+
+            await prisma.users.update({
+                where: { email },
+                data: { status: "ACTIVE" }
+            });
+
+            await prisma.email_verification.delete({
+                where: { id: otpRequest.id }
+            });
+
+            return res.status(200).json({ message: "Account successfully activated" });
+
         } catch (error) {
-            return res.status(400).json({ message: "Unexpected error", error: error.message })
+            console.error("Verify OTP error:", error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
 
@@ -157,7 +226,7 @@ class Users {
             const device = this.deviceDetector.parse(useragent);
 
             const deviceShort = `${device.device?.type || 'Unknown device'}, ${device.device?.brand || 'Unknown brand'}, ${device.os?.name || 'Unknown OS'}, ${device.client?.name || 'Unknown browser'}`;
-            const deviceDescription = `${deviceShort}, вход: ${loginTime.toLocaleString()}`;
+            const deviceDescription = `${deviceShort}, logged: ${loginTime.toLocaleString()}`;
             console.log(1);
 
             let session = await prisma.sessions.findFirst({
@@ -196,7 +265,7 @@ class Users {
 
             res.cookie("refresh_token", refresh_token, {
                 httpOnly: true,
-                maxAge: 129600000 // 1.5 days
+                maxAge: 129600000 
             });
 
             return res.status(200).json({
@@ -204,97 +273,47 @@ class Users {
                 accessToken: access_token
             });
         } catch (error) {
-            return res.status(400).json({ message: "Unexpected error", error: error.message });
+            console.error("Sign In error:", error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
-    }
-
-    async ban_user(req, res) {
-        try {
-            let { error } = banValidation(req.body);
-
-            if (error) {
-                return res.status(400).json({ message: error.message });
-            }
-            const { userId, ban_reason } = req.body
-            const find_user = await prisma.users.findUnique({ where: { id: userId } })
-            if (!find_user) {
-                return res.status(404).json({ message: "User not found" })
-            }
-            const find_bun_user = await prisma.ban.findFirst({ where: { userId } })
-            if (find_bun_user) {
-                return res.status(403).json({ message: "User already banned" })
-            }
-
-            await prisma.ban.create({ data: { userId, ban_reason } })
-            await prisma.users.update({ where: { id: userId }, data: { status: "BANNED" } })
-            return res.status(200).json({ message: "User successfully banned" })
-        } catch (error) {
-            return res.status(400).json({ message: "Unexpected error", error: error.message })
-        }
-
-    }
-
-    async activate_user(req, res) {
-        try {
-            console.log(req.user);
-
-            let { error } = activateValidation(req.body);
-            if (error) {
-                return res.status(400).json({ message: error.message });
-            }
-            const { userId } = req.body
-            const find_user = await prisma.users.findUnique({ where: { id: userId } })
-            if (!find_user) {
-                return res.status(404).json({ message: "User not found" })
-            }
-            const find_active_user = await prisma.activation.findFirst({ where: { userId } })
-            if (find_active_user) {
-                return res.status(403).json({ message: "User already activated" })
-            }
-            await prisma.activation.create({ data: { userId, activation_status: "ACTIVE" } })
-            await prisma.users.update({ where: { id: userId }, data: { status: "ACTIVE" } })
-            return res.status(200).json({ message: "User successfully activated" })
-        } catch (error) {
-            return res.status(400).json({ message: "Unexpected error", error: error.message })
-        }
-
     }
 
     async send_otp_reset(req, res) {
         try {
-            const options = {
-                to: req.body.to,
-                subject: req.body.subject,
-            };
-
-            for (const key in options) {
-                const value = options[key];
-                if (!value) return res.status(403).json({ error: `${key} is required!` });
+            const { to, subject } = req.body;
+            if (!to || !subject) {
+                return res.status(403).json({ error: "Email and subject are required!" });
             }
-
-            const to = options.to;
 
             const find_user = await prisma.users.findUnique({ where: { email: to } });
             if (!find_user) {
                 return res.status(404).json({ message: "User not found" });
             }
 
+            const existingRequest = await prisma.reset_Password.findUnique({ where: { email: to } });
+            if (existingRequest && new Date() < new Date(existingRequest.expiresAt)) {
+                return res.status(429).json({
+                    message: "OTP already sent recently. Please wait until it expires before requesting a new one.",
+                    expiresAt: existingRequest.expiresAt
+                });
+            }
 
-
-            const secret = stringToHash(options.to);
+            const secret = stringToHash(to);
             const otp_code = otp.totp.generate(secret);
-
-            const expiresAt = new Date(Date.now() + otp.totp.options.step * 2 * 60 * 1000);
+            const step = otp.totp.options.step || 300;
+            const expiresAt = new Date(Date.now() + step * 1000);
 
             await prisma.reset_Password.upsert({
-                where: { email: options.to },
+                where: { email: to },
                 update: {
+                    otpCode: otp_code,
                     expiresAt,
                     otpVerified: false,
                 },
                 create: {
                     userId: find_user.id,
-                    email: options.to,
+                    email: to,
+                    otpCode: otp_code,
                     expiresAt,
                     otpVerified: false,
                 }
@@ -302,13 +321,14 @@ class Users {
 
             const parameters = {
                 digit: otp_code,
-                expires_at: otp.totp.options.step,
+                expires_at: step,
                 secret,
             };
-            return otp_mailer(options, res, parameters);
 
+            return otp_mailer({ to, subject }, res, parameters);
         } catch (error) {
-            return res.status(400).json({ message: "Unexpected error", error: error.message })
+            console.error("Send OTP error:", error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
 
@@ -321,15 +341,18 @@ class Users {
                 return res.status(404).json({ message: "User not found" });
             }
 
+            const request = await prisma.reset_Password.findUnique({ where: { email } });
+            if (!request || new Date() > request.expiresAt) {
+                return res.status(400).json({ message: "OTP request expired. Please request again." });
+            }
+
+            if (request.otpVerified) {
+                return res.status(400).json({ message: "OTP already used." });
+            }
+
             const match = otp.totp.check(otp_code, stringToHash(email));
             if (!match) {
                 return res.status(400).json({ message: "Wrong OTP code" });
-            }
-
-            const request = await prisma.reset_Password.findUnique({ where: { email } });
-
-            if (!request || new Date() > request.expiresAt) {
-                return res.status(400).json({ message: "OTP request expired. Please request again." });
             }
 
             await prisma.reset_Password.update({
@@ -338,9 +361,9 @@ class Users {
             });
 
             return res.status(200).json({ message: "OTP verified. You can now reset your password." });
-
         } catch (error) {
-            return res.status(400).json({ message: "Unexpected error", error: error.message })
+            console.error("Verify OTP error:", error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
 
@@ -348,39 +371,119 @@ class Users {
         try {
             const { email, newPassword } = req.body;
 
-            let { error } = resetPasswordValidation(req.body);
+            const { error } = resetPasswordValidation(req.body);
             if (error) {
                 return res.status(400).json({ message: error.message });
             }
+
             if (!isStrongPassword(newPassword)) {
-                return res.status(400).json({ message: "Password should have min one UpperCase ,one LowerCase and Number" })
+                return res.status(400).json({ message: "Password should have at least one uppercase, one lowercase, and one number." });
             }
+
             const user = await prisma.users.findUnique({ where: { email } });
             if (!user) {
                 return res.status(404).json({ message: "User not found" });
             }
 
             const resetRequest = await prisma.reset_Password.findUnique({ where: { email } });
-
             if (!resetRequest || !resetRequest.otpVerified || new Date() > resetRequest.expiresAt) {
                 return res.status(403).json({ message: "OTP not verified or expired" });
             }
 
             const hashed = await bcrypt.hash(newPassword, 10);
-
             await prisma.users.update({
                 where: { email },
                 data: { password: hashed }
             });
 
-            await prisma.reset_Password.delete({
-                where: { email }
-            });
+            await prisma.reset_Password.delete({ where: { email } });
 
             return res.status(200).json({ message: "Password successfully reset" });
+        } catch (error) {
+            console.error("Reset password error:", error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
+        }
+    }
+
+    async ban_user(req, res) {
+        try {
+            const { error } = banValidation(req.body);
+            if (error) {
+                return res.status(400).json({ message: error.message });
+            }
+
+            const { userId, ban_reason } = req.body;
+
+            const user = await prisma.users.findUnique({ where: { id: userId } });
+            if (!user) {
+                return res.status(404).json({ message: "User not found" });
+            }
+
+            const existingBan = await prisma.ban.findFirst({ where: { userId } });
+            if (existingBan || user.status === "BANNED") {
+                return res.status(403).json({ message: "User is already banned" });
+            }
+
+            
+            await prisma.$transaction([
+                prisma.ban.create({
+                    data: { userId, ban_reason }
+                }),
+                prisma.users.update({
+                    where: { id: userId },
+                    data: { status: "BANNED" }
+                })
+            ]);
+
+            return res.status(200).json({ message: "User successfully banned" });
 
         } catch (error) {
-            return res.status(400).json({ message: "Unexpected error", error: error.message })
+            console.error("Ban error:", error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
+        }
+    }
+
+    async activate_user(req, res) {
+        try {
+            const { error } = activateValidation(req.body);
+            if (error) {
+                return res.status(400).json({ message: error.message });
+            }
+
+            const { userId } = req.body;
+
+            const user = await prisma.users.findUnique({ where: { id: userId } });
+            if (!user) {
+                return res.status(404).json({ message: "User not found" });
+            }
+
+            if (user.status === "ACTIVE") {
+                return res.status(403).json({ message: "User already active" });
+            }
+
+            const existingActivation = await prisma.activation.findFirst({ where: { userId,activation_status:"ACTIVE"} });
+            if (existingActivation) {
+                return res.status(403).json({ message: "User already activated" });
+            }
+
+            await prisma.$transaction([
+                prisma.activation.create({
+                    data: {
+                        userId,
+                        activation_status: "ACTIVE"
+                    }
+                }),
+                prisma.users.update({
+                    where: { id: userId },
+                    data: { status: "ACTIVE" }
+                })
+            ]);
+
+            return res.status(200).json({ message: "User successfully activated" });
+
+        } catch (error) {
+            console.error("Activation error:", error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
 
@@ -400,7 +503,8 @@ class Users {
             const access_token = TokenService.generate_access_token(payload);
             return res.status(200).json({ access_token, updateUser })
         } catch (error) {
-            return res.status(400).json({ message: "Unexpected error", error: error.message })
+            console.error("Refresh token error:", error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
 
     }
@@ -426,7 +530,8 @@ class Users {
             }
             return res.status(200).json(data);
         } catch (error) {
-            return res.status(400).json({ message: "Unexpected error", error: error.message })
+            console.error("Get my data error:", error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
 
@@ -437,10 +542,37 @@ class Users {
             if (error) {
                 return res.status(400).json({ message: error.message });
             }
-            let updated_user = await prisma.users.update({ where: { id: req.user.id }, data: { ...req.body } })
+            let { username, telegram, facebook, instagram } = req.body;
+            let mediaConflicts = [];
+
+            if (telegram) {
+                const existingTelegram = await prisma.users.findFirst({ where: { telegram } });
+                if (existingTelegram) mediaConflicts.push("telegram");
+            }
+
+            if (facebook) {
+                const existingFacebook = await prisma.users.findFirst({ where: { facebook } });
+                if (existingFacebook) mediaConflicts.push("facebook");
+            }
+
+            if (instagram) {
+                const existingInstagram = await prisma.users.findFirst({ where: { instagram } });
+                if (existingInstagram) mediaConflicts.push("instagram");
+            }
+
+            if (mediaConflicts.length > 0) {
+                return res.status(400).json({
+                    message: `User with this ${mediaConflicts.join(", ")} already exists.`,
+                });
+            }
+
+            console.log(req.body);
+
+            let updated_user = await prisma.users.update({ where: { id: req.user.id }, data: { username, telegram, facebook, instagram } })
             return res.status(200).json({ message: "Username updated succesfully", updated_user })
         } catch (error) {
-            return res.status(400).json({ message: "Unexpected error", error: error.message })
+            console.error("Update user error:", error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
 
@@ -454,13 +586,13 @@ class Users {
             }
 
             let data = await prisma.sessions.findMany({
-                where: { userId: user.id },
-                include: { user: true }
+                where: { userId: user.id }
             });
 
             return res.status(200).json({ data });
         } catch (error) {
-            return res.status(400).json({ message: "Unexpected error", error: error.message })
+            console.error("My session error:", error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
 
@@ -480,15 +612,24 @@ class Users {
             await prisma.sessions.delete({ where: { id } });
             return res.json({ message: "Session deleted" });
         } catch (error) {
-            return res.status(400).json({ message: "Unexpected error", error: error.message });
+            console.error("Del My Session error:", error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
 
     async upload_file(req, res) {
         try {
+            const file = req.file;
             const userId = req.user.id;
             const filename = req.file.filename;
+            const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+            console.log(1);
 
+            console.log(file.mimetype);
+            if (!allowedTypes.includes(file.mimetype)) {
+
+                return res.status(400).json({ message: "You can download only images (jpeg, png, webp)" });
+            }
             await prisma.users.update({
                 where: { id: userId },
                 data: { image: filename }
@@ -496,88 +637,27 @@ class Users {
 
             res.status(201).json({ data: ` http://localhost:3300/users/image/${filename}` });
         } catch (error) {
-            res.status(500).json({ message: "Error updating image", error: error.message });
-        }
-    }
-
-    async end_time_session(req, res) {
-        const { sessionId, endDate } = req.body;
-
-        if (!sessionId || !endDate) {
-            return res.status(400).json({ error: 'Missing sessionId or endDate' });
-        }
-
-        let session = await prisma.sessions.findFirst({
-            where: {
-                id: sessionId
-            }
-        });
-
-        if (!session) {
-            return res.status(404).json({ message: 'SessionId not found' });
-        }
-
-        try {
-            const updatedSession = await prisma.sessions.update({
-                where: { id: sessionId },
-                data: { endDate: new Date(endDate) },
-            });
-
-            return res.json({ message: 'Session end time updated', updatedSession });
-        } catch (error) {
-            return res.status(400).json({ message: "Unexpected error", error: error.message });
-        }
-    }
-
-    async average_session_time(req, res) {
-        try {
-            const sessions = await prisma.sessions.findMany({
-                where: {
-                    NOT: {
-                        endDate: null
-                    }
-                },
-                select: {
-                    date: true,
-                    endDate: true
-                }
-            });
-
-            if (sessions.length === 0) {
-                return res.status(404).json({ message: 'No completed sessions found' });
-            }
-
-            const totalTimeMs = sessions.reduce((acc, session) => {
-                const duration = new Date(session.endDate) - new Date(session.date);
-                return acc + duration;
-            }, 0);
-
-            const avgTimeMs = totalTimeMs / sessions.length;
-            const avgTimeSeconds = Math.floor(avgTimeMs / 1000);
-
-            const hours = Math.floor(avgTimeSeconds / 3600);
-            const minutes = Math.floor((avgTimeSeconds % 3600) / 60);
-
-            return res.json({
-                averageSiteTime: `${hours}h ${minutes}m`
-            });
-
-        } catch (error) {
-            return res.status(500).json({
-                message: 'Error calculating average session time',
-                error: error.message
-            });
+            console.error('Error Upload File:', error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
 
     async browsers_statistics(req, res) {
         try {
-            const allSessionsCount = await prisma.sessions.count();
+            const range = getDateRange(req.path, req.query);
+            console.log(range);
+
+            const whereClause = range ? { createdAt: range } : {};
+            console.log(whereClause);
+
+            const allSessionsCount = await prisma.sessions.count({ where: whereClause });
 
             const browserStats = await prisma.sessions.groupBy({
                 by: ['browser'],
+                where: whereClause,
                 _count: { browser: true }
             });
+
             const statsWithPercentages = browserStats.map(item => ({
                 browser: item.browser,
                 count: item._count.browser,
@@ -585,20 +665,25 @@ class Users {
             }));
 
             res.status(200).json(statsWithPercentages);
-
         } catch (error) {
-            return res.status(400).json({ message: "Unexpected error!", error: error.message })
+            console.error('Error Browser Statistic:', error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
 
     async devices_statistics(req, res) {
         try {
-            const allSessionsCount = await prisma.sessions.count();
+            const range = getDateRange(req.path, req.query);
+            const whereClause = range ? { createdAt: range } : {};
+
+            const allSessionsCount = await prisma.sessions.count({ where: whereClause });
 
             const devicesStats = await prisma.sessions.groupBy({
                 by: ['deviceType'],
+                where: whereClause,
                 _count: { deviceType: true }
             });
+
             const statsWithPercentages = devicesStats.map(item => ({
                 deviceType: item.deviceType,
                 count: item._count.deviceType,
@@ -608,20 +693,153 @@ class Users {
             res.status(200).json(statsWithPercentages);
 
         } catch (error) {
-            return res.status(400).json({ message: "Unexpected error!", error: error.message })
+            console.error('Error Device Statistic:', error);
+            res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
 
     async user_statistics(req, res) {
         try {
-            let find_users_count = await prisma.users.count({ where: { status: "ACTIVE" } })
+            const range = getDateRange(req.path, req.query);
+            const where = { status: "ACTIVE" };
+            if (range) where.createdAt = range;
 
-            let total_page = Math.ceil(find_users_count / 20)
+            const count = await prisma.users.count({ where });
 
-            return res.status(200).json({ data: { total_count: find_users_count, total_page } })
+            const total_page = Math.ceil(count / 20);
+
+            res.status(200).json({ data: { total_count: count, total_page } });
 
         } catch (error) {
-            return res.status(400).json({ message: "Unexpected error!", error: error.message })
+            console.error('Error User Statistics:', error);
+            res.status(500).json({ message: "Unexpected error. Please try again later." });
+        }
+    }
+
+    async end_time_session(req, res) {
+        try {
+            const { sessionId, endDate } = req.body;
+
+            if (!sessionId || !endDate) {
+                return res.status(400).json({ error: 'Missing sessionId or endDate' });
+            }
+
+            const session = await prisma.sessions.findUnique({ where: { id: sessionId } });
+            if (!session) return res.status(404).json({ message: 'Session not found' });
+            if (session.endDate) return res.status(400).json({ message: 'Session already ended' });
+
+            const end = new Date(endDate);
+            const start = new Date(session.date);
+
+            if (end <= start) {
+                return res.status(400).json({ message: 'End time must be after start time' });
+            }
+
+            const maxSessionDuration = 24 * 60 * 60 * 1000;
+            if (end - start > maxSessionDuration) {
+                return res.status(400).json({ message: 'Session duration too long' });
+            }
+
+            const updated = await prisma.sessions.update({
+                where: { id: sessionId },
+                data: { endDate: end }
+            });
+
+            return res.json({ message: 'Session ended', session: updated });
+
+        } catch (error) {
+            console.error('Error ending session:', error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
+        }
+    }
+
+    async average_session_time(req, res) {
+        try {
+            const dateFilter = getDateRange(req.path, req.query);
+
+            const sessions = await prisma.sessions.findMany({
+                where: {
+                    NOT: { endDate: null },
+                    ...(dateFilter && { date: dateFilter })
+                },
+                select: {
+                    date: true,
+                    endDate: true
+                }
+            });
+
+            if (sessions.length === 0) {
+                return res.status(404).json({ message: 'No completed sessions found in the selected period' });
+            }
+
+            const totalMs = sessions.reduce((acc, session) => {
+                return acc + (new Date(session.endDate).getTime() - new Date(session.date).getTime());
+            }, 0);
+
+            const avgMs = totalMs / sessions.length;
+            const totalMinutes = Math.floor(avgMs / 60000);
+            const hours = Math.floor(totalMinutes / 60);
+            const minutes = totalMinutes % 60;
+
+            return res.json({
+                averageSessionTime: `${hours}h ${minutes}m`,
+                totalSessions: sessions.length
+            });
+
+        } catch (error) {
+            console.error('Error calculating average session time:', error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
+        }
+    }
+
+    async logout(req, res) {
+        try {
+            res.clearCookie('refresh_token', {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production', 
+                sameSite: 'Strict'
+            });
+
+            return res.status(200).json({ message: "Logged out successfully" });
+        } catch (error) {
+            console.error("Logout error:", error);
+            return res.status(500).json({ message: "Logout failed. Try again later." });
+        }
+    }
+
+    async getLogs(req, res) {
+        try {
+            const page = parseInt(req.query.page) || 1;
+            const limit = parseInt(req.query.limit) || 50;
+            const skip = (page - 1) * limit;
+
+            const [logs, totalLogs] = await Promise.all([
+                prisma.requestLog.findMany({
+                    skip,
+                    take: limit,
+                    orderBy: { createdAt: 'desc' }, 
+                }),
+                prisma.requestLog.count(),
+            ]);
+
+            const totalPages = Math.ceil(totalLogs / limit);
+
+            return res.status(200).json({
+                success: true,
+                data: logs,
+                meta: {
+                    totalLogs,
+                    currentPage: page,
+                    totalPages,
+                    limitPerPage: limit,
+                },
+            });
+        } catch (error) {
+            console.error("Error fetching request logs:", error);
+            return res.status(500).json({
+                success: false,
+                message: "Failed to retrieve logs. Please try again later.",
+            });
         }
     }
 

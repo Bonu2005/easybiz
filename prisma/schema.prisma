@@ -20,27 +20,42 @@ enum UsersStatus {
   BANNED
 }
 
+model Email_verification {
+  id          String   @id @default(uuid())
+  userId      String
+  user        Users    @relation(fields: [userId], references: [id])
+  email       String   @unique
+  otpCode     String   @default("")
+  otpVerified Boolean  @default(false)
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model Users {
-  id             String           @id @default(uuid())
-  username       String
-  email          String           @unique
-  password       String
-  roleId         String
-  image          String           @default("image.png")
-  telegram       String?          @unique
-  facebook       String?          @unique
-  instagram      String?          @unique
-  role           Role             @relation(fields: [roleId], references: [id])
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @default(now()) @updatedAt
-  was_online     DateTime         @default(now())
-  status         UsersStatus      @default(PENDING)
-  Ban            Ban[]
-  Activation     Activation[]
-  Reset_Password Reset_Password[]
-  UserRole       UserRole[]
-  Sessions       Sessions[]
-  Projects       Projects[]
+  id                 String               @id @default(uuid())
+  username           String
+  email              String               @unique
+  password           String
+  roleId             String
+  image              String               @default("image.png")
+  telegram           String?              @unique
+  facebook           String?              @unique
+  instagram          String?              @unique
+  role               Role                 @relation(fields: [roleId], references: [id])
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @default(now()) @updatedAt
+  was_online         DateTime             @default(now())
+  status             UsersStatus          @default(PENDING)
+  Ban                Ban[]
+  Activation         Activation[]
+  Reset_Password     Reset_Password[]
+  UserRole           UserRole[]
+  Sessions           Sessions[]
+  Projects           Projects[]
+  email_verification Email_verification[]
+
+  RequestLog RequestLog[]
 }
 
 model Role {
@@ -79,6 +94,7 @@ model Reset_Password {
   id          String   @id @default(uuid())
   userId      String
   email       String   @unique
+  otpCode     String   @default("")
   otpVerified Boolean  @default(false)
   expiresAt   DateTime
   createdAt   DateTime @default(now())
@@ -96,6 +112,7 @@ model Sessions {
   user       Users     @relation(fields: [userId], references: [id])
   deviceType String
   browser    String
+  createdAt  DateTime  @default(now())
 }
 
 model Projects {
@@ -148,9 +165,23 @@ model Project_Templates {
 }
 
 model Domains {
-  id String @id @default(uuid())
+  id          String @id @default(uuid())
   domain_name String
-  verified String
-  dns_config String
+  verified    String
+  dns_config  String
+}
 
+model RequestLog {
+  id             String   @id @default(uuid())
+  userId         String?
+  user           Users?   @relation(fields: [userId], references: [id])
+  method         String
+  url            String
+  ip             String
+  userAgent      String
+  body           Json?
+  query          Json?
+  responseCode   Int
+  responseTimeMs Int
+  createdAt      DateTime @default(now())
 }

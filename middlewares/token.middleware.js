@@ -5,9 +5,6 @@ config()
 
 const middleWare = (req, res, next) => {
     let token = req.header("Authorization")?.split(" ")[1]
-    console.log(token);
-
-
     if (!token) {
         res.status(400).json({ message: "not authorized" })
         return
@@ -19,7 +16,6 @@ const middleWare = (req, res, next) => {
         next()
     } catch (error) {
         res.status(400).json({ message: "not authorized" })
-
     }
 }
 module.exports = middleWare
