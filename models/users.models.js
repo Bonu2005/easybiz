@@ -110,7 +110,7 @@ class Users {
             const existingOtp = await prisma.email_verification.findFirst({
                 where: {
                     email: to,
-                    expiresAt: { gt: new Date() }, 
+                    expiresAt: { gt: new Date() },
                 },
                 orderBy: { createdAt: 'desc' }
             });
@@ -122,19 +122,15 @@ class Users {
                 });
             }
 
-
             await prisma.email_verification.deleteMany({
                 where: { email: to }
             });
 
-    
             const secret = stringToHash(to);
             const otpCode = otp.totp.generate(secret);
-
-            const expiresInSeconds = 180; 
+            const expiresInSeconds = 180;
             const expiresAt = new Date(Date.now() + expiresInSeconds * 1000);
 
-       
             await prisma.email_verification.create({
                 data: {
                     userId: user.id,
@@ -144,14 +140,18 @@ class Users {
                 }
             });
 
-           
             const parameters = {
                 digit: otpCode,
                 expires_at: expiresInSeconds,
-
             };
 
-            return otp_mailer({ to, subject }, res, parameters);
+            const result = await otp_mailer({ to, subject }, res, parameters);
+
+            if (result.success) {
+                return res.status(200).json({ message: "OTP sent successfully", otp: parameters });
+            } else {
+                return res.status(500).json({ message: "Failed to send OTP", error: result.error || result.rejected });
+            }
 
         } catch (error) {
             console.error("Send OTP error:", error);
@@ -265,7 +265,7 @@ class Users {
 
             res.cookie("refresh_token", refresh_token, {
                 httpOnly: true,
-                maxAge: 129600000 
+                maxAge: 129600000
             });
 
             return res.status(200).json({
@@ -325,7 +325,14 @@ class Users {
                 secret,
             };
 
-            return otp_mailer({ to, subject }, res, parameters);
+            const result = await otp_mailer({ to, subject }, res, parameters);
+
+            if (result.success) {
+                return res.status(200).json({ message: "OTP sent successfully", otp: parameters });
+            } else {
+                return res.status(500).json({ message: "Failed to send OTP", error: result.error || result.rejected });
+            }
+
         } catch (error) {
             console.error("Send OTP error:", error);
             return res.status(500).json({ message: "Unexpected error. Please try again later." });
@@ -424,7 +431,7 @@ class Users {
                 return res.status(403).json({ message: "User is already banned" });
             }
 
-            
+
             await prisma.$transaction([
                 prisma.ban.create({
                     data: { userId, ban_reason }
@@ -461,7 +468,7 @@ class Users {
                 return res.status(403).json({ message: "User already active" });
             }
 
-            const existingActivation = await prisma.activation.findFirst({ where: { userId,activation_status:"ACTIVE"} });
+            const existingActivation = await prisma.activation.findFirst({ where: { userId, activation_status: "ACTIVE" } });
             if (existingActivation) {
                 return res.status(403).json({ message: "User already activated" });
             }
@@ -796,7 +803,7 @@ class Users {
         try {
             res.clearCookie('refresh_token', {
                 httpOnly: true,
-                secure: process.env.NODE_ENV === 'production', 
+                secure: process.env.NODE_ENV === 'production',
                 sameSite: 'Strict'
             });
 
@@ -817,7 +824,7 @@ class Users {
                 prisma.requestLog.findMany({
                     skip,
                     take: limit,
-                    orderBy: { createdAt: 'desc' }, 
+                    orderBy: { createdAt: 'desc' },
                 }),
                 prisma.requestLog.count(),
             ]);

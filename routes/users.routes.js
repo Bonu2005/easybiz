@@ -1,5 +1,5 @@
 const express = require("express");
-const { Users, Roles } = require("../composables/imports");
+const { Users, Roles,Chats } = require("../composables/imports");
 const middleWare = require("../middlewares/token.middleware");
 const passedRole = require("../middlewares/role.police");
 const selfPolice = require("../middlewares/self.police");
@@ -222,5 +222,34 @@ Router.use("/image", express.static("uploads"));
 Router.use("/get-logs", (req, res) => {
     Users.getLogs(req, res)
 });
+
+//--------------------------------------------------------------------------------------------------------------------------------------------------------------Chats
+
+
+Router.post("/start-chat",middleWare, (req, res) => {
+    Chats.start_chat(req, res)
+});
+
+
+Router.get("/get-flows",middleWare, (req, res) => {
+    Chats.get_flows(req, res)
+});
+
+
+Router.patch("/connect-chat/:sessionId",middleWare,passedRole(["ADMIN"]), (req, res) => {
+    Chats.connect_chat_session(req, res)
+});
+
+
+Router.post("/send-message/:sessionId",middleWare,  (req, res) => {
+    Chats.send_message(req, res)
+});
+
+
+Router.get("/get-message",middleWare, (req, res) => {
+    Chats.get_messages(req, res)
+});
+
+
 
 module.exports = Router;

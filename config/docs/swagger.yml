@@ -1723,3 +1723,113 @@ paths:
                   message:
                     type: string
                     example: Failed to retrieve logs. Please try again later.
+
+
+
+  /users/start-chat:
+      post:
+        tags: [Chat]
+        summary: Начать чат-сессию (клиент)
+        security:
+          - bearerAuth: []
+        responses:
+          '201':
+            description: Сессия создана
+          '200':
+            description: Уже существует активная сессия
+          '500':
+            description: Ошибка сервера
+
+  /users/get-flows:
+    get:
+      tags: [Chat]
+      summary: Получить список всех открытых и активных сессий
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Список чатов
+        '500':
+          description: Ошибка сервера
+
+  /users/connect-chat/{sessionId}:
+    patch:
+      tags:
+        - Chat
+      summary: Админ подключается к сессии
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          description: ID сессии, к которой подключается админ
+          schema:
+            type: string
+            example: 8de13d15-6344-4450-a51b-d37a321639ec
+      responses:
+        '200':
+          description: Подключено
+        '400':
+          description: Сессия уже закрыта
+        '404':
+          description: Сессия не найдена
+        '500':
+          description: Внутренняя ошибка сервера
+
+  /users/send-message/{sessionId}:
+    post:
+      tags:
+        - Chat
+      summary: Отправить сообщение в чат
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          description: ID сессии чата
+          schema:
+            type: string
+            example: 8de13d15-6344-4450-a51b-d37a321639ec
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content:
+                  type: string
+                  example: Привет, как дела?
+              required:
+                - content
+      responses:
+        '201':
+          description: Сообщение успешно отправлено
+        '400':
+          description: Контент отсутствует
+        '404':
+          description: Сессия не найдена
+        '500':
+          description: Внутренняя ошибка сервера
+
+  /users/get-message:
+    get:
+      tags: [Chat]
+      summary: Получить все сообщения по сессии
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sessionId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Список сообщений
+        '404':
+          description: Сессия не найдена
+        '500':
+          description: Ошибка сервера

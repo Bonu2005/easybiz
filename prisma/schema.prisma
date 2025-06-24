@@ -46,6 +46,7 @@ model Users {
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @default(now()) @updatedAt
   was_online         DateTime             @default(now())
+  yandex_metrika     Json?
   status             UsersStatus          @default(PENDING)
   Ban                Ban[]
   Activation         Activation[]
@@ -54,8 +55,11 @@ model Users {
   Sessions           Sessions[]
   Projects           Projects[]
   email_verification Email_verification[]
-
-  RequestLog RequestLog[]
+  RequestLog         RequestLog[]
+  clientChatSessions ChatSession[]        @relation("ClientChatSessions")
+  adminChatSessions  ChatSession[]        @relation("AdminChatSessions")
+  ChatMessage        ChatMessage[]
+  ChatSession        ChatSession[]
 }
 
 model Role {
@@ -113,6 +117,37 @@ model Sessions {
   deviceType String
   browser    String
   createdAt  DateTime  @default(now())
+}
+
+model ChatSession {
+  id        String        @id @default(uuid())
+  clientId  String
+  client    Users         @relation("ClientChatSessions", fields: [clientId], references: [id])
+  adminId   String?
+  admin     Users?        @relation("AdminChatSessions", fields: [adminId], references: [id])
+  status    ChatStatus    @default(OPEN)
+  messages  ChatMessage[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  Users     Users?        @relation(fields: [usersId], references: [id])
+  usersId   String?
+}
+
+enum ChatStatus {
+  OPEN
+  ACTIVE 
+  CLOSED // обращение завершено
+}
+
+model ChatMessage {
+  id        String      @id @default(uuid())
+  sessionId String
+  session   ChatSession @relation(fields: [sessionId], references: [id])
+  senderId  String
+  sender    Users       @relation(fields: [senderId], references: [id])
+  content   String
+  isRead    Boolean     @default(false)
+  createdAt DateTime    @default(now())
 }
 
 model Projects {

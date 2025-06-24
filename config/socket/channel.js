@@ -14,9 +14,9 @@ const io = new Server(server, {
     },
 });
 
-if (!io) {
-    console.error("Ошибка инициализации Socket.IO");
-    process.exit(1);
+function getIo() {
+  if (!io) throw new Error("Socket.IO not initialized");
+  return io;
 }
 
-module.exports = { server, io };
+module.exports = { server, io,getIo };
