@@ -10,8 +10,9 @@ const middleWare = (req, res, next) => {
         return
     }
     try {
-        let verify = jwt.verify(token, process.env.accesstoken)
+        let verify = jwt.verify(token, process.env.accesstoken) 
         req.user = verify
+        req.sessionId = verify.sessionId
 
         next()
     } catch (error) {

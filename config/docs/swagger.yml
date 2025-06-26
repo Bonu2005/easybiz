@@ -15,6 +15,8 @@ security:
 
 
 paths:
+
+
   /users:
     get:
       summary: Получить список пользователей
@@ -788,8 +790,6 @@ paths:
                     example: Logout failed. Try again later.
 
 
-
-
   /users/ban-user:
     post:
       summary: Заблокировать пользователя
@@ -1251,6 +1251,78 @@ paths:
                     example: Unexpected error. Please try again later.
 
 
+  /users/uploads/file:
+    post:
+      summary: Upload media file
+      description: Uploads an image (jpeg, png, webp, jpg) and returns its URL.
+      tags:
+        - Uploads
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The media file to upload (jpeg, png, webp, jpg)
+      responses:
+        '201':
+          description: File uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: File uploaded successfully
+                  mediaUrl:
+                    type: string
+                    example: http://localhost:3300/users/file/1719324502819.jpg
+        '400':
+          description: No file uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: No file uploaded
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Server error
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
   /users/roles:
@@ -1627,6 +1699,139 @@ paths:
                         example: 5
         '500':
           description: Internal server error
+  
+
+  /users/page-statistics/{period}:
+    get:
+      summary: Получить статистику по просмотрам страниц
+      description: |
+        Возвращает количество просмотров каждой страницы с возможностью фильтрации по периоду.
+        Если данных за указанный период нет — возвращает последние самые просматриваемые страницы.
+      tags:
+        - Statistics
+      parameters:
+        - name: period
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [day, month, year, custom]
+          description: Период для фильтрации (день, месяц, год или custom)
+        - name: day
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: День (только для custom)
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+          description: Месяц (только для custom)
+        - name: year
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Год (только для custom)
+      responses:
+        '200':
+          description: Успешный ответ со статистикой по страницам
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                          example: /home
+                        count:
+                          type: integer
+                          example: 120
+                        percentage:
+                          type: string
+                          example: "40%"
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                        example: No data found in the given range. Returning recent page stats.
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            count:
+                              type: integer
+                            percentage:
+                              type: string
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unexpected error. Please try again later.
+
+      
+  /users/log-page-view:
+    post:
+      summary: Сохранить просмотр страницы
+      description: Логирует факт просмотра страницы пользователем (или анонимно).
+      tags:
+        - Pages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: /home
+      responses:
+        '201':
+          description: Просмотр страницы успешно сохранён
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Page view logged
+        '400':
+          description: Не указано имя страницы
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Page name is required
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Server error
 
 
   /users/get-logs:
@@ -1725,7 +1930,6 @@ paths:
                     example: Failed to retrieve logs. Please try again later.
 
 
-
   /users/start-chat:
       post:
         tags: [Chat]
@@ -1801,18 +2005,90 @@ paths:
               properties:
                 content:
                   type: string
+                  description: Текст сообщения
                   example: Привет, как дела?
-              required:
-                - content
+                mediaUrl:
+                  type: string
+                  description: URL медиафайла
+                  example: http://localhost:3300/users/file/1750935526357.pdf
+              anyOf:
+                - required: [content]
+                - required: [mediaUrl]
       responses:
         '201':
           description: Сообщение успешно отправлено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Message sent successfully
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        example: "ca6b5674-1a18-4c31-8136-5b0b6d5585fb"
+                      sessionId:
+                        type: string
+                        example: "8de13d15-6344-4450-a51b-d37a321639ec"
+                      senderId:
+                        type: string
+                        example: "c7d24445-3644-4422-bdff-6f56e9127784"
+                      content:
+                        type: string
+                        nullable: true
+                        example: Привет, как дела?
+                      mediaUrl:
+                        type: string
+                        nullable: true
+                        example: http://localhost:3300/users/file/1750935526357.pdf
+                      createdAt:
+                        type: string
+                        format: date-time
+                        example: 2025-06-26T12:00:00.000Z
         '400':
-          description: Контент отсутствует
+          description: Контент отсутствует, превышен лимит сообщений или сессия закрыта
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Message must have either text or media
+        '403':
+          description: Превышено допустимое количество сообщений в сессии
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: This session already has two messages.
         '404':
           description: Сессия не найдена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Session not found
         '500':
           description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Server error
 
   /users/get-message:
     get:
@@ -1833,3 +2109,281 @@ paths:
           description: Сессия не найдена
         '500':
           description: Ошибка сервера
+
+  /users/chat-session-archive/{sessionId}:
+    patch:
+      summary: Архивировать чат-сессию
+      description: Обновляет статус чат-сессии на ARCHIVED (мягкое удаление).
+      tags:
+        - Chat
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          description: Уникальный ID чат-сессии
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Сессия успешно архивирована
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Chat session archived successfully
+        '404':
+          description: Сессия не найдена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Chat session not found
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unexpected error. Please try again later.
+
+
+  /users/message-isRead/{messageId}:
+    patch:
+      summary: Отметить сообщение как прочитанное
+      tags:
+        - Chat
+      parameters:
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Сообщение обновлено
+        '404':
+          description: Сообщение не найдено
+
+
+
+  /users/archive-messages:
+    get:
+      tags:
+        - Chat
+      summary: Получить список заархивированных чатов
+      description: Возвращает все чаты со статусом `ARCHIVED`.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Успешный ответ. Список заархивированных сессий.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          example: 1
+                        clientId:
+                          type: string
+                          example: "user123"
+                        adminId:
+                          type: string
+                          example: "admin456"
+                        status:
+                          type: string
+                          example: "ARCHIVED"
+                        createdAt:
+                          type: string
+                          format: date-time
+                        updatedAt:
+                          type: string
+                          format: date-time
+        '401':
+          description: Неавторизован. Необходим действительный токен доступа.
+        '500':
+          description: Внутренняя ошибка сервера
+
+
+
+  /users/closed-messages:
+    get:
+      tags:
+        - Chat
+      summary: Получить список закрытых чатов
+      description: Возвращает все чаты со статусом `CLOSED`.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Успешный ответ. Список закрытых сессий.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          example: 1
+                        clientId:
+                          type: string
+                          example: "user123"
+                        adminId:
+                          type: string
+                          example: "admin456"
+                        status:
+                          type: string
+                          example: "CLOSED"
+                        createdAt:
+                          type: string
+                          format: date-time
+                        updatedAt:
+                          type: string
+                          format: date-time
+        '401':
+          description: Неавторизован. Требуется токен.
+        '500':
+          description: Внутренняя ошибка сервера.
+
+
+  /users/favorites/{messageId}:
+    post:
+      summary: Добавить сообщение в избранное
+      description: Добавляет конкретное сообщение в избранное текущего пользователя.
+      tags:
+        - Favorites
+      parameters:
+        - name: messageId
+          in: path
+          required: true
+          description: ID сообщения, которое нужно добавить в избранное
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Сообщение успешно добавлено в избранное
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Added to favorites
+        '400':
+          description: Сообщение уже находится в избранном
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Message already in favorites
+        '500':
+          description: Внутренняя ошибка сервера
+
+
+
+  /users/favorites-del/{messageId}:
+    delete:
+      summary: Удалить сообщение из избранного
+      description: Удаляет сообщение из избранного текущего пользователя.
+      tags:
+        - Favorites
+      parameters:
+        - name: messageId
+          in: path
+          required: true
+          description: ID избранного сообщения, которое нужно удалить
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Сообщение успешно удалено из избранного
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Removed from favorites
+        '404':
+          description: Сообщение не найдено в избранном
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Favorite not found
+        '500':
+          description: Внутренняя ошибка сервера
+
+
+  /users/favorites:
+    get:
+      summary: Получить все избранные сообщения пользователя
+      description: Возвращает список всех сообщений, добавленных пользователем в избранное.
+      tags:
+        - Favorites
+      responses:
+        '200':
+          description: Успешный запрос. Возвращает массив избранных сообщений.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      example: 123e4567-e89b-12d3-a456-426614174000
+                    message:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        content:
+                          type: string
+                        createdAt:
+                          type: string
+                        sender:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            username:
+                              type: string
+                        session:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            status:
+                              type: string
+        '500':
+          description: Внутренняя ошибка сервера

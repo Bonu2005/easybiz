@@ -25,7 +25,10 @@ class Users {
 
         try {
             let find_users_count = await prisma.users.count()
-            let find_users = await prisma.users.findMany({ include: { role: true } })
+            let find_role = await prisma.role.findFirst({ where: { name: "USER" } })
+            console.log(find_role);
+
+            let find_users = await prisma.users.findMany({ include: { role: true }, where: { roleId: find_role.id } })
             let total_page = Math.ceil(find_users_count / 20)
             return res.status(200).json({ data: find_users, total_count: find_users_count, total_page })
         } catch (error) {
@@ -227,7 +230,6 @@ class Users {
 
             const deviceShort = `${device.device?.type || 'Unknown device'}, ${device.device?.brand || 'Unknown brand'}, ${device.os?.name || 'Unknown OS'}, ${device.client?.name || 'Unknown browser'}`;
             const deviceDescription = `${deviceShort}, logged: ${loginTime.toLocaleString()}`;
-            console.log(1);
 
             let session = await prisma.sessions.findFirst({
                 where: {
@@ -237,7 +239,7 @@ class Users {
             });
 
             if (!session || !session.info.startsWith(deviceShort)) {
-                await prisma.sessions.create({
+                session = await prisma.sessions.create({
                     data: {
                         ip: req.ip,
                         userId: user.id,
@@ -257,7 +259,8 @@ class Users {
             const payload = {
                 id: user.id,
                 status: user.status,
-                role: role.name
+                role: role.name,
+                sessionId: session.id,
             };
 
             const access_token = TokenService.generate_access_token(payload);
@@ -606,7 +609,9 @@ class Users {
     async del_my_session(req, res) {
         const user = req.user;
         const { id } = req.params;
-
+        const currentSessionId = req.sessionId
+        console.log(currentSessionId);
+        
         try {
             const session = await prisma.sessions.findUnique({ where: { id } });
             if (!session) {
@@ -614,6 +619,9 @@ class Users {
             }
             if (session.userId !== user.id) {
                 return res.status(403).json({ message: "Not authorized to delete this session" });
+            }
+            if (currentSessionId === session.id) {
+                return res.status(400).json({ message: "You cannot delete the session you are currently using" });
             }
             await prisma.users.update({ where: { id: user.id }, data: { status: "PENDING" } })
             await prisma.sessions.delete({ where: { id } });
@@ -649,16 +657,76 @@ class Users {
         }
     }
 
+    async upload_file_media(req, res) {
+        try {
+            if (!req.file) {
+                return res.status(400).json({ message: "No file uploaded" });
+            }
+
+            const fileUrl = `http://localhost:3300/users/file/${req.file.filename}`;
+            return res.status(201).json({
+                message: "File uploaded successfully",
+                mediaUrl: fileUrl
+            });
+        } catch (err) {
+            console.error("Upload error:", err);
+            return res.status(500).json({ message: "Server error" });
+        }
+
+    }
+
     async browsers_statistics(req, res) {
         try {
             const range = getDateRange(req.path, req.query);
-            console.log(range);
 
-            const whereClause = range ? { createdAt: range } : {};
-            console.log(whereClause);
+            // Базовый фильтр — только для пользователей с ролью USER
+            const baseWhere = {
+                user: {
+                    role: {
+                        name: "USER"
+                    }
+                }
+            };
+
+            // Добавляем фильтр по дате, если он есть
+            const whereClause = range ? { ...baseWhere, createdAt: range } : baseWhere;
 
             const allSessionsCount = await prisma.sessions.count({ where: whereClause });
 
+            if (allSessionsCount === 0) {
+                // Fallback: последние браузеры для пользователей с ролью USER
+                const fallbackBrowserStats = await prisma.sessions.groupBy({
+                    by: ['browser'],
+                    where: {
+                        user: {
+                            role: {
+                                name: "USER"
+                            }
+                        }
+                    },
+                    _count: { browser: true },
+                    orderBy: {
+                        _count: {
+                            browser: 'desc'
+                        }
+                    }
+                });
+
+                const total = fallbackBrowserStats.reduce((acc, item) => acc + item._count.browser, 0);
+
+                const fallbackResult = fallbackBrowserStats.map(item => ({
+                    browser: item.browser,
+                    count: item._count.browser,
+                    percentage: Math.floor(((item._count.browser / total) * 100).toFixed(2)) + '%'
+                }));
+
+                return res.status(200).json({
+                    message: "No data found in the given range. Returning recent stats for users with role USER.",
+                    data: fallbackResult
+                });
+            }
+
+            // Основная статистика по браузерам
             const browserStats = await prisma.sessions.groupBy({
                 by: ['browser'],
                 where: whereClause,
@@ -681,10 +749,59 @@ class Users {
     async devices_statistics(req, res) {
         try {
             const range = getDateRange(req.path, req.query);
-            const whereClause = range ? { createdAt: range } : {};
+            const { deviceType } = req.query;
+
+            // Базовый фильтр — только пользователи с ролью USER
+            const baseWhere = {
+                user: {
+                    role: {
+                        name: "USER"
+                    }
+                }
+            };
+
+            // Добавляем фильтрацию по дате и устройству
+            const whereClause = {
+                ...baseWhere,
+                ...(range ? { createdAt: range } : {}),
+                ...(deviceType ? { deviceType: deviceType.toUpperCase() } : {})
+            };
 
             const allSessionsCount = await prisma.sessions.count({ where: whereClause });
 
+            // Fallback — если ничего не найдено
+            if (allSessionsCount === 0) {
+                const fallbackWhere = {
+                    ...baseWhere,
+                    ...(deviceType ? { deviceType: deviceType.toUpperCase() } : {})
+                };
+
+                const fallbackStats = await prisma.sessions.groupBy({
+                    by: ['deviceType'],
+                    where: fallbackWhere,
+                    _count: { deviceType: true },
+                    orderBy: {
+                        _count: {
+                            deviceType: 'desc'
+                        }
+                    }
+                });
+
+                const total = fallbackStats.reduce((acc, item) => acc + item._count.deviceType, 0);
+
+                const fallbackResult = fallbackStats.map(item => ({
+                    deviceType: item.deviceType,
+                    count: item._count.deviceType,
+                    percentage: Math.floor(((item._count.deviceType / total) * 100).toFixed(2)) + '%'
+                }));
+
+                return res.status(200).json({
+                    message: "No data found in the given range. Returning recent stats for users with role USER.",
+                    data: fallbackResult
+                });
+            }
+
+            // Основная статистика
             const devicesStats = await prisma.sessions.groupBy({
                 by: ['deviceType'],
                 where: whereClause,
@@ -697,31 +814,111 @@ class Users {
                 percentage: Math.floor(((item._count.deviceType / allSessionsCount) * 100).toFixed(2)) + '%'
             }));
 
-            res.status(200).json(statsWithPercentages);
+            return res.status(200).json(statsWithPercentages);
 
         } catch (error) {
             console.error('Error Device Statistic:', error);
-            res.status(500).json({ message: "Unexpected error. Please try again later." });
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
 
     async user_statistics(req, res) {
         try {
             const range = getDateRange(req.path, req.query);
-            const where = { status: "ACTIVE" };
-            if (range) where.createdAt = range;
+
+            const baseRoleFilter = {
+                status: "ACTIVE",
+                role: {
+                    name: "USER"
+                }
+            };
+
+            const where = {
+                ...baseRoleFilter,
+                ...(range ? { createdAt: range } : {})
+            };
 
             const count = await prisma.users.count({ where });
-
             const total_page = Math.ceil(count / 20);
 
-            res.status(200).json({ data: { total_count: count, total_page } });
+            // Если статистика пуста — возвращаем последних USER'ов без учета диапазона
+            if (count === 0) {
+                const recentUsers = await prisma.users.findMany({
+                    where: {
+                        role: {
+                            name: "USER"
+                        }
+                    },
+                    take: 20,
+                    orderBy: {
+                        createdAt: 'desc'
+                    },
+                    include: {
+                        role: true
+                    }
+                });
+
+                return res.status(200).json({
+                    message: "No statistics found in given range. Returning recent users with role USER.",
+                    data: {
+                        total_count: 0,
+                        total_page: 0,
+                        recent_users: recentUsers
+                    }
+                });
+            }
+
+            // Если есть статистика — возвращаем количество и страницы
+            res.status(200).json({
+                data: {
+                    total_count: count,
+                    total_page
+                }
+            });
 
         } catch (error) {
             console.error('Error User Statistics:', error);
             res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
+
+
+    async page_statistics(req, res) {
+        try {
+            const range = getDateRange(req.path, req.query);
+            const whereClause = range ? { createdAt: range } : {};
+
+
+            const allPageNamesRaw = await prisma.viewPages.findMany({
+                select: { name: true },
+                distinct: ['name'],
+            });
+
+            const allPageNames = allPageNamesRaw.map(item => item.name);
+
+
+            const pageStats = await prisma.viewPages.groupBy({
+                by: ['name'],
+                where: whereClause,
+                _count: { name: true },
+            });
+
+
+            const result = allPageNames.map(name => {
+                const stat = pageStats.find(p => p.name === name);
+                return {
+                    name,
+                    count: stat?._count.name || 0
+                };
+            });
+
+            return res.status(200).json(result);
+        } catch (error) {
+            console.error('Error Page Statistic:', error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
+        }
+    }
+
 
     async end_time_session(req, res) {
         try {
@@ -760,25 +957,57 @@ class Users {
         }
     }
 
+
     async average_session_time(req, res) {
         try {
             const dateFilter = getDateRange(req.path, req.query);
 
-            const sessions = await prisma.sessions.findMany({
-                where: {
-                    NOT: { endDate: null },
-                    ...(dateFilter && { date: dateFilter })
+            // Базовый фильтр — завершённые сессии и пользователь с ролью USER
+            const baseFilter = {
+                NOT: { endDate: null },
+                user: {
+                    role: {
+                        name: 'USER'
+                    }
                 },
+                ...(dateFilter ? { date: dateFilter } : {})
+            };
+
+            let sessions = await prisma.sessions.findMany({
+                where: baseFilter,
                 select: {
                     date: true,
                     endDate: true
                 }
             });
 
+            // Если нет данных — fallback: просто последние 20 завершённых USER-сессий
             if (sessions.length === 0) {
-                return res.status(404).json({ message: 'No completed sessions found in the selected period' });
+                sessions = await prisma.sessions.findMany({
+                    where: {
+                        NOT: { endDate: null },
+                        user: {
+                            role: {
+                                name: 'USER'
+                            }
+                        }
+                    },
+                    orderBy: {
+                        date: 'desc'
+                    },
+                    take: 20,
+                    select: {
+                        date: true,
+                        endDate: true
+                    }
+                });
+
+                if (sessions.length === 0) {
+                    return res.status(404).json({ message: 'No completed sessions for users with role USER' });
+                }
             }
 
+            // Рассчитываем среднее время
             const totalMs = sessions.reduce((acc, session) => {
                 return acc + (new Date(session.endDate).getTime() - new Date(session.date).getTime());
             }, 0);
@@ -790,7 +1019,8 @@ class Users {
 
             return res.json({
                 averageSessionTime: `${hours}h ${minutes}m`,
-                totalSessions: sessions.length
+                totalSessions: sessions.length,
+                fallbackUsed: dateFilter && sessions.length < 20 // Просто дополнительный флаг
             });
 
         } catch (error) {
@@ -799,20 +1029,40 @@ class Users {
         }
     }
 
+
     async logout(req, res) {
         try {
+            const sessionId = req.sessionId;
+            const userId = req.user.id;
+
+       
             res.clearCookie('refresh_token', {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'Strict'
             });
 
+   
+            await prisma.sessions.delete({ where: { id: sessionId } });
+
+        
+            const remainingSessions = await prisma.sessions.count({ where: { userId } });
+
+            if (remainingSessions === 0) {
+                await prisma.users.update({
+                    where: { id: userId },
+                    data: { status: 'PENDING' }
+                });
+            }
+
             return res.status(200).json({ message: "Logged out successfully" });
+
         } catch (error) {
             console.error("Logout error:", error);
             return res.status(500).json({ message: "Logout failed. Try again later." });
         }
     }
+
 
     async getLogs(req, res) {
         try {
@@ -848,6 +1098,29 @@ class Users {
                 message: "Failed to retrieve logs. Please try again later.",
             });
         }
+    }
+
+
+    async logPageView(req, res) {
+        try {
+            let { name } = req.body;
+
+            if (!name || typeof name !== 'string') {
+                return res.status(400).json({ message: 'Page name is required' });
+            }
+
+            name = name.trim().toUpperCase();
+
+            await prisma.viewPages.create({
+                data: { name },
+            });
+
+            return res.status(201).json({ message: 'Page view logged' });
+        } catch (error) {
+            console.error('Error logging page view:', error);
+            return res.status(500).json({ message: 'Server error' });
+        }
+
     }
 
 }

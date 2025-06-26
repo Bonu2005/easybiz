@@ -135,19 +135,22 @@ model ChatSession {
 
 enum ChatStatus {
   OPEN
-  ACTIVE 
-  CLOSED // обращение завершено
+  ACTIVE
+  CLOSED
+  ARCHIVED
 }
 
 model ChatMessage {
-  id        String      @id @default(uuid())
-  sessionId String
-  session   ChatSession @relation(fields: [sessionId], references: [id])
-  senderId  String
-  sender    Users       @relation(fields: [senderId], references: [id])
-  content   String
-  isRead    Boolean     @default(false)
-  createdAt DateTime    @default(now())
+  id              String            @id @default(uuid())
+  sessionId       String
+  session         ChatSession       @relation(fields: [sessionId], references: [id])
+  senderId        String
+  sender          Users             @relation(fields: [senderId], references: [id])
+  content         String
+  isRead          Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+  mediaUrl        String?
+  FavoriteMessage FavoriteMessage[]
 }
 
 model Projects {
@@ -219,4 +222,20 @@ model RequestLog {
   responseCode   Int
   responseTimeMs Int
   createdAt      DateTime @default(now())
+}
+
+model FavoriteMessage {
+  id String @id @default(uuid())
+
+  messageId String
+  message   ChatMessage @relation(fields: [messageId], references: [id])
+  createdAt DateTime    @default(now())
+
+  @@unique(messageId)
+}
+
+model ViewPages {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
 }

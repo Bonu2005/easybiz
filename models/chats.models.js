@@ -2,7 +2,10 @@ const prisma = require("../database/config.db")
 const otp_mailer = require("../composables/machine/otp.init");
 const { ChatStatus } = require("../src/generated/prisma");
 const { getIo } = require("../config/socket/channel");
+const { json } = require("express");
 class Chats {
+
+
     async start_chat(req, res) {
         const clientId = req.user.id;
 
@@ -84,7 +87,7 @@ class Chats {
                 orderBy: {
                     updatedAt: "desc",
                 },
-                take: 1
+                take: 20
             });
 
             res.status(200).json(sessions);
@@ -97,8 +100,7 @@ class Chats {
     async connect_chat_session(req, res) {
         const adminId = req.user.id;
         const { sessionId } = req.params;
-        console.log(sessionId);
-
+   
 
         try {
             const session = await prisma.chatSession.findFirst({
@@ -128,18 +130,18 @@ class Chats {
 
         } catch (error) {
             console.error("Error to connect admin to chat_session:", error);
-          
+
             res.status(500).json({ message: "Something get wrong please try again" });
         }
     }
 
     async send_message(req, res) {
         const { sessionId } = req.params;
-        const { content } = req.body;
+        const { content ,mediaUrl} = req.body;
         const senderId = req.user.id;
 
-        if (!content) {
-            return res.status(400).json({ message: "Message can not be empty" });
+        if (!content && !mediaUrl) {
+            return res.status(400).json({ message: "Message must have either text or media" });
         }
 
         try {
@@ -155,44 +157,81 @@ class Chats {
                 return res.status(404).json({ message: "Session not found" });
             }
 
+            if (session.status === "CLOSED") {
+                return res.status(400).json({ message: "Flow is already closed" });
+            }
+
+            const messageCount = await prisma.chatMessage.count({
+                where: { sessionId },
+            });
+
+            if (req.user.role === "USER" && messageCount >= 1) {
+                return res.status(400).json({ message: "You can only send one flow" })
+            }
+
+            if (messageCount >= 2) {
+                return res.status(403).json({ message: "This session already has two messages." });
+            }
+
+
+
+
+
+           
+            if (req.user.role === "ADMIN" && messageCount === 1) {
+                const sessionWithoutAdmin = await prisma.chatSession.findFirst({ where: { id: sessionId, adminId: null } })
+
+                if (sessionWithoutAdmin !== null) {
+                    return res.status(400).json({ message: "First You should To connect in this Session" })
+                }
+                await prisma.chatSession.update({
+                    where: { id: sessionId },
+                    data: { status: "CLOSED" },
+                });
+            }
+
+
             const message = await prisma.chatMessage.create({
                 data: {
                     sessionId,
                     senderId,
                     content,
+                    mediaUrl:mediaUrl?mediaUrl:null,
                 },
             });
+            // Отправка события по сокету
             getIo().to(sessionId).emit("new_message", {
                 id: message.id,
                 sessionId,
                 senderId,
                 content,
+                mediaUrl,
                 createdAt: message.createdAt,
             });
-            // Если отправитель — админ, отправим письмо клиенту
+
+            // Email клиенту
             if (req.user.role === "ADMIN" && session.client?.email) {
                 const clientEmail = session.client.email;
                 const subject = "Новый ответ от администратора";
-                const text = `
-    <html>
-    <body style="font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4;">
-        <div style="max-width: 600px; margin: auto; background-color: #ffffff; padding: 40px 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-            <h2 style="text-align: center; color: #333;">Здравствуйте, ${session.client.username}!</h2>
-            <p style="font-size: 18px; text-align: center; color: #555; ">Мы рады сообщить, что ваш запрос получил ответ от администратора.</p>
-            <p style="font-size: 16px; color: #555;">Вот текст ответа:</p>
-            <div style="background-color: #f9f9f9; border-left: 4px solid #007bff; padding: 10px 14px; margin: 20px 0; font-size: 16px; color: #333;">
-                <p style="font-style: italic;">"${content}"</p>
-            </div>
-            <p style="font-size: 16px; color: #555;">Если у вас возникнут дополнительные вопросы, не стесняйтесь ответить на это письмо, и мы с радостью вам поможем.</p>
-            <p style="font-size: 16px; color: #555;">С уважением,</p>
-            <p style="font-size: 16px; font-weight: bold; color: #333;">Поддержка EasyBiz</p>
-        </div>
-    </body>
-</html>
 
-    `;
+                const html = `
+            <html>
+            <body>
+                <div style="font-family: Arial; background-color: #fff; padding: 20px;">
+                    <h3>Здравствуйте, ${session.client.username}!</h3>
+                    <p>Ваш запрос получил ответ от администратора:</p>
+                    <blockquote style="border-left: 4px solid #007bff; padding-left: 10px;">
+                        ${content ? `"${content}"` : ""}
+                        ${mediaUrl ? `<br><img src="https://your-domain.com${mediaUrl}" style="max-width: 100%; margin-top: 10px;">` : ""}
+                    </blockquote>
+                    <p>Если у вас есть вопросы — просто ответьте.</p>
+                    <p>С уважением, команда EasyBiz</p>
+                </div>
+            </body>
+            </html>
+            `;
 
-                const mailResult = await otp_mailer({ to: clientEmail, subject }, res, text);
+                const mailResult = await otp_mailer({ to: clientEmail, subject }, res, html);
 
                 if (!mailResult.success) {
                     console.error("Ошибка при отправке письма:", mailResult.error || mailResult.rejected);
@@ -204,14 +243,16 @@ class Chats {
                 message: "Message sent successfully",
                 data: message,
             });
+
         } catch (err) {
             console.error("Ошибка при отправке сообщения:", err);
-            return res.status(500).json({ message: "Ошибка сервера" });
+            return res.status(500).json({ message: "Server error" });
         }
     }
 
     async get_messages(req, res) {
-        const { sessionId } = req.params;
+        const { sessionId } = req.query;
+        console.log(sessionId);
 
         try {
             const session = await prisma.chatSession.findFirst({
@@ -239,6 +280,140 @@ class Chats {
 
             res.status(200).json(messages);
         } catch (err) {
+            console.error("Error to get messages:", err);
+            res.status(500).json({ message: "Something get wrong please try again" });
+        }
+    }
+
+    async get_archive_messages(req, res) {
+        try {
+            let find_archive = await prisma.chatSession.findMany({ where: { status: "ARCHIVED" } })
+            return res.status(200).json({ message: find_archive })
+        } catch (error) {
+            console.error("Error to get messages:", err);
+            res.status(500).json({ message: "Something get wrong please try again" });
+        }
+    }
+
+    async archive_chat_session(req, res) {
+        try {
+            console.log("hi");
+
+            const { sessionId } = req.params;
+
+            const existing = await prisma.chatSession.findUnique({
+                where: { id: sessionId }
+            });
+
+            if (!existing) {
+                return res.status(404).json({ message: "Chat session not found" });
+            }
+
+            // Обновляем статус
+            await prisma.chatSession.update({
+                where: { id: sessionId },
+                data: { status: 'ARCHIVED' }
+            });
+
+            return res.status(200).json({ message: "Chat session archived successfully" });
+
+        } catch (error) {
+            console.error('Error archiving chat session:', error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
+        }
+    }
+
+    async isReadChat(req, res) {
+        const { messageId } = req.params;
+
+        const message = await prisma.chatMessage.findUnique({ where: { id: messageId } });
+
+        if (!message) return res.status(404).json({ message: 'Not found' });
+
+        await prisma.chatMessage.update({
+            where: { id: messageId },
+            data: { isRead: true }
+        });
+        return res.status(200).json({ message: "IsRead updated successfully" })
+    }
+
+    async addFavorite(req, res) {
+        const { messageId } = req.params;
+
+
+        try {
+            const alreadyExists = await prisma.favoriteMessage.findUnique({
+                where: { messageId },
+            });
+
+            if (alreadyExists) {
+                return res.status(400).json({ message: 'Message already in favorites' });
+            }
+
+            await prisma.favoriteMessage.create({
+                data: { messageId },
+            });
+
+            return res.status(201).json({ message: 'Added to favorites' });
+        } catch (error) {
+            console.error('Add favorite error:', error);
+            return res.status(500).json({ message: 'Server error' });
+        }
+    }
+
+    async removeFavorite(req, res) {
+        const { messageId } = req.params;
+        try {
+            const alreadyExists = await prisma.favoriteMessage.findUnique({
+                where: { messageId },
+            });
+
+            if (!alreadyExists) {
+                return res.status(400).json({ message: 'Message already removed from favorites' });
+            }
+
+            await prisma.favoriteMessage.delete({
+                where: { messageId },
+            });
+
+            return res.status(200).json({ message: 'Removed from favorites' });
+        } catch (error) {
+            console.error('Remove favorite error:', error);
+            return res.status(404).json({ message: 'Favorite not found' });
+        }
+    }
+
+    async getFavorites(req, res) {
+        try {
+            const favorites = await prisma.favoriteMessage.findMany({
+                include: {
+                    message: {
+                        include: {
+                            session: true,
+                            sender: {
+                                select: {
+                                    id: true,
+                                    username: true,
+                                },
+                            },
+                        },
+                    },
+                },
+                orderBy: { createdAt: 'desc' },
+            });
+
+            return res.status(200).json(favorites);
+        } catch (error) {
+            console.error('Get favorites error:', error);
+            return res.status(500).json({ message: 'Server error' });
+        }
+    }
+
+    async getClosedChts(req, res) {
+        try {
+            let find_closed = await prisma.chatSession.findMany({ where: { status: "CLOSED" } })
+            return res.status(200).json({ message: find_closed })
+        } catch (error) {
             console.error("Error to get messages:", err);
             res.status(500).json({ message: "Something get wrong please try again" });
         }

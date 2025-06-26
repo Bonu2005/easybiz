@@ -7,9 +7,7 @@ const upload = require("../config/multer/multer");
 const refreshTokenMiddleware = require("../middlewares/refresh_token.middleware");
 const requestLogger  =require( '../middlewares/request_logger.middleware');
 const Router = express.Router();
-
-
-
+const uploadMedia = require("../config/multer/multerMedia")
 
 
 //--------------------------------------------------------------------------------------------------------------------------------------------------------USERS
@@ -102,6 +100,7 @@ Router.delete("/del-my-sessions/:id", middleWare, (req, res) => {
 Router.patch("/session-end", middleWare, requestLogger,passedRole("ADMIN", "SUPER ADMIN"), (req, res) => {
     Users.end_time_session(req, res)
 })
+
 
 
 //---------------------------------------------------------------------------------------------------------------------------------------------------------ROLE
@@ -202,6 +201,26 @@ Router.get('/user-statistics/custom', (req, res) => {
     Users.user_statistics(req, res);
 });
 
+Router.get('/page-statistics/day', (req, res) => {
+    Users.page_statistics(req, res);
+});
+
+Router.get('/page-statistics/month', (req, res) => {
+    Users.page_statistics(req, res);
+});
+
+Router.get('/page-statistics/year', (req, res) => {
+    Users.page_statistics(req, res);
+});
+
+Router.get('/page-statistics/custom', (req, res) => {
+    Users.page_statistics(req, res);
+});
+
+Router.post('/log-page-view', (req, res) => {
+    Users.logPageView(req, res);
+});
+
 
 
 
@@ -213,8 +232,13 @@ Router.use("/upload", upload.single("image"), requestLogger,middleWare, (req, re
     Users.upload_file(req, res)
 });
 
-
 Router.use("/image", express.static("uploads"));
+
+Router.post("/uploads/file", uploadMedia.single("file"), (req, res) => {
+   Users.upload_file_media(req,res)
+});
+
+Router.use("/file", express.static("uploads/media"));
 
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------LOGS
@@ -248,6 +272,40 @@ Router.post("/send-message/:sessionId",middleWare,  (req, res) => {
 
 Router.get("/get-message",middleWare, (req, res) => {
     Chats.get_messages(req, res)
+});
+
+
+Router.patch("/chat-session-archive/:sessionId",middleWare,passedRole(["ADMIN"]), (req, res) => {    
+    Chats.archive_chat_session(req, res)
+});
+
+
+Router.patch("/message-isRead/:messageId",middleWare, (req, res) => {
+    Chats.isReadChat(req, res)
+});
+
+
+Router.get("/archive-messages",middleWare, (req, res) => {
+    Chats.get_archive_messages(req, res)
+});
+
+Router.get("/closed-messages",middleWare, (req, res) => {
+    Chats.getClosedChts(req, res)
+});
+
+
+Router.post("/favorites/:messageId",middleWare,passedRole(["ADMIN"]), (req, res) => {
+    Chats.addFavorite(req, res)
+});
+
+
+Router.delete("/favorites-del/:messageId",middleWare,passedRole(["ADMIN"]), (req, res) => {
+    Chats.removeFavorite(req, res)
+});
+
+
+Router.get("/favorites",middleWare, (req, res) => {
+    Chats.getFavorites(req, res)
 });
 
 
