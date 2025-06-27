@@ -17,6 +17,7 @@ const getDateRange = require('../composables/utils/statistics_date.helper');
 otp.totp.options = { step: 120, digits: 6 };
 
 class Users {
+
     constructor() {
         this.deviceDetector = new DeviceDetektor()
     }
@@ -129,16 +130,23 @@ class Users {
                 where: { email: to }
             });
 
+
+            otp.totp.options = {
+                step: 180,
+                window: [1, 0],
+            };
+
             const secret = stringToHash(to);
             const otpCode = otp.totp.generate(secret);
-            const expiresInSeconds = 180;
+            const expiresInSeconds = otp.totp.options.step || 180;
             const expiresAt = new Date(Date.now() + expiresInSeconds * 1000);
+
 
             await prisma.email_verification.create({
                 data: {
                     userId: user.id,
                     email: to,
-                    otpCode,
+                    secret,
                     expiresAt: expiresAt,
                 }
             });
@@ -188,10 +196,12 @@ class Users {
                 return res.status(400).json({ message: "No active OTP found or OTP expired" });
             }
 
-            if (otpRequest.otpCode != otp_code) {
+
+            const isValid = otp.totp.check(otp_code, otpRequest.secret);
+
+            if (!isValid) {
                 return res.status(400).json({ message: "Invalid OTP code" });
             }
-
 
             await prisma.users.update({
                 where: { email },
@@ -294,13 +304,18 @@ class Users {
             }
 
             const existingRequest = await prisma.reset_Password.findUnique({ where: { email: to } });
-            if (existingRequest && new Date() < new Date(existingRequest.expiresAt)) {
+            const now = new Date();
+
+            if (existingRequest && now < existingRequest.expiresAt) {
                 return res.status(429).json({
-                    message: "OTP already sent recently. Please wait until it expires before requesting a new one.",
+                    message: "OTP already sent recently. Please wait until it expires.",
                     expiresAt: existingRequest.expiresAt
                 });
             }
-
+            otp.totp.options = {
+                step: 300,
+                window: [1, 0]
+            };
             const secret = stringToHash(to);
             const otp_code = otp.totp.generate(secret);
             const step = otp.totp.options.step || 300;
@@ -309,14 +324,14 @@ class Users {
             await prisma.reset_Password.upsert({
                 where: { email: to },
                 update: {
-                    otpCode: otp_code,
+                    secret,
                     expiresAt,
                     otpVerified: false,
                 },
                 create: {
                     userId: find_user.id,
                     email: to,
-                    otpCode: otp_code,
+                    secret,
                     expiresAt,
                     otpVerified: false,
                 }
@@ -331,7 +346,7 @@ class Users {
             const result = await otp_mailer({ to, subject }, res, parameters);
 
             if (result.success) {
-                return res.status(200).json({ message: "OTP sent successfully", otp: parameters });
+                return res.status(200).json({ message: "OTP sent successfully" });
             } else {
                 return res.status(500).json({ message: "Failed to send OTP", error: result.error || result.rejected });
             }
@@ -342,26 +357,27 @@ class Users {
         }
     }
 
+
     async verify_otp_reset(req, res) {
         try {
             const { otp_code, email } = req.body;
-            const user = await prisma.users.findUnique({ where: { email } });
 
+            const user = await prisma.users.findUnique({ where: { email } });
             if (!user) {
                 return res.status(404).json({ message: "User not found" });
             }
 
             const request = await prisma.reset_Password.findUnique({ where: { email } });
             if (!request || new Date() > request.expiresAt) {
-                return res.status(400).json({ message: "OTP request expired. Please request again." });
+                return res.status(400).json({ message: "OTP expired. Please request again." });
             }
 
             if (request.otpVerified) {
-                return res.status(400).json({ message: "OTP already used." });
+                return res.status(400).json({ message: "OTP already verified." });
             }
 
-            const match = otp.totp.check(otp_code, stringToHash(email));
-            if (!match) {
+            const isValid = otp.totp.check(otp_code, request.secret);
+            if (!isValid) {
                 return res.status(400).json({ message: "Wrong OTP code" });
             }
 
@@ -371,11 +387,13 @@ class Users {
             });
 
             return res.status(200).json({ message: "OTP verified. You can now reset your password." });
+
         } catch (error) {
             console.error("Verify OTP error:", error);
             return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
+
 
     async reset_password(req, res) {
         try {
@@ -387,7 +405,7 @@ class Users {
             }
 
             if (!isStrongPassword(newPassword)) {
-                return res.status(400).json({ message: "Password should have at least one uppercase, one lowercase, and one number." });
+                return res.status(400).json({ message: "Password should include uppercase, lowercase and number." });
             }
 
             const user = await prisma.users.findUnique({ where: { email } });
@@ -415,6 +433,7 @@ class Users {
         }
     }
 
+
     async ban_user(req, res) {
         try {
             const { error } = banValidation(req.body);
@@ -429,20 +448,13 @@ class Users {
                 return res.status(404).json({ message: "User not found" });
             }
 
-            const existingBan = await prisma.ban.findFirst({ where: { userId } });
-            if (existingBan || user.status === "BANNED") {
+            if (user.status === "BANNED") {
                 return res.status(403).json({ message: "User is already banned" });
             }
 
-
             await prisma.$transaction([
-                prisma.ban.create({
-                    data: { userId, ban_reason }
-                }),
-                prisma.users.update({
-                    where: { id: userId },
-                    data: { status: "BANNED" }
-                })
+                prisma.ban.create({ data: { userId, ban_reason } }),
+                prisma.users.update({ where: { id: userId }, data: { status: "BANNED" } })
             ]);
 
             return res.status(200).json({ message: "User successfully banned" });
@@ -452,6 +464,7 @@ class Users {
             return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
+
 
     async activate_user(req, res) {
         try {
@@ -471,11 +484,6 @@ class Users {
                 return res.status(403).json({ message: "User already active" });
             }
 
-            const existingActivation = await prisma.activation.findFirst({ where: { userId, activation_status: "ACTIVE" } });
-            if (existingActivation) {
-                return res.status(403).json({ message: "User already activated" });
-            }
-
             await prisma.$transaction([
                 prisma.activation.create({
                     data: {
@@ -486,7 +494,8 @@ class Users {
                 prisma.users.update({
                     where: { id: userId },
                     data: { status: "ACTIVE" }
-                })
+                }),
+                prisma.ban.deleteMany({ where: { userId } }) 
             ]);
 
             return res.status(200).json({ message: "User successfully activated" });
@@ -611,7 +620,7 @@ class Users {
         const { id } = req.params;
         const currentSessionId = req.sessionId
         console.log(currentSessionId);
-        
+
         try {
             const session = await prisma.sessions.findUnique({ where: { id } });
             if (!session) {
@@ -1035,17 +1044,17 @@ class Users {
             const sessionId = req.sessionId;
             const userId = req.user.id;
 
-       
+
             res.clearCookie('refresh_token', {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'Strict'
             });
 
-   
+
             await prisma.sessions.delete({ where: { id: sessionId } });
 
-        
+
             const remainingSessions = await prisma.sessions.count({ where: { userId } });
 
             if (remainingSessions === 0) {

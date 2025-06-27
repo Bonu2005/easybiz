@@ -25,7 +25,7 @@ model Email_verification {
   userId      String
   user        Users    @relation(fields: [userId], references: [id])
   email       String   @unique
-  otpCode     String   @default("")
+  secret      String
   otpVerified Boolean  @default(false)
   expiresAt   DateTime
   createdAt   DateTime @default(now())
@@ -83,7 +83,7 @@ model Ban {
   user       Users    @relation(fields: [userId], references: [id])
   ban_reason String
   ban_start  DateTime @default(now())
-  ban_end    DateTime @default(now()) @updatedAt
+  ban_end    DateTime? @default(now()) @updatedAt
 }
 
 model Activation {
@@ -98,7 +98,7 @@ model Reset_Password {
   id          String   @id @default(uuid())
   userId      String
   email       String   @unique
-  otpCode     String   @default("")
+  secret      String
   otpVerified Boolean  @default(false)
   expiresAt   DateTime
   createdAt   DateTime @default(now())
