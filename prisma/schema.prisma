@@ -78,11 +78,11 @@ model UserRole {
 }
 
 model Ban {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   userId     String
-  user       Users    @relation(fields: [userId], references: [id])
+  user       Users     @relation(fields: [userId], references: [id])
   ban_reason String
-  ban_start  DateTime @default(now())
+  ban_start  DateTime  @default(now())
   ban_end    DateTime? @default(now()) @updatedAt
 }
 
@@ -106,17 +106,18 @@ model Reset_Password {
 }
 
 model Sessions {
-  id         String    @id @default(uuid())
-  ip         String
-  location   String?
-  info       String
-  date       DateTime  @default(now())
-  endDate    DateTime?
-  userId     String
-  user       Users     @relation(fields: [userId], references: [id])
-  deviceType String
-  browser    String
-  createdAt  DateTime  @default(now())
+  id          String    @id @default(uuid())
+  ip          String
+  location    String?
+  info        String
+  date        DateTime  @default(now())
+  endDate     DateTime?
+  userId      String
+  user        Users     @relation(fields: [userId], references: [id])
+  deviceType  String
+  deviceGroup String
+  browser     String
+  createdAt   DateTime  @default(now())
 }
 
 model ChatSession {

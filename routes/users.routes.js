@@ -59,7 +59,7 @@ Router.post("/reset-password", requestLogger,(req, res) => {
 })
 
 
-Router.use("/logout", (req, res) => {
+Router.use("/logout",middleWare, (req, res) => {
     Users.logout(req, res)
 });
 

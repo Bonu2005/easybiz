@@ -13,6 +13,8 @@ const DeviceDetektor = require("device-detector-js");
 const checkSession = require("../composables/utils/check_sessions.init");
 const updateSelfValidation = require("../validations/updateSelf.validation");
 const getDateRange = require('../composables/utils/statistics_date.helper');
+const { da } = require("date-fns/locale");
+const classifyDevice = require("../composables/utils/classifyDevice.init");
 
 otp.totp.options = { step: 120, digits: 6 };
 
@@ -27,7 +29,7 @@ class Users {
         try {
             let find_users_count = await prisma.users.count()
             let find_role = await prisma.role.findFirst({ where: { name: "USER" } })
-            console.log(find_role);
+            console.log(find_role.id);
 
             let find_users = await prisma.users.findMany({ include: { role: true }, where: { roleId: find_role.id } })
             let total_page = Math.ceil(find_users_count / 20)
@@ -238,8 +240,13 @@ class Users {
             const useragent = req.headers["user-agent"];
             const device = this.deviceDetector.parse(useragent);
 
+            const deviceType = device.device?.type || 'Unknown device';
             const deviceShort = `${device.device?.type || 'Unknown device'}, ${device.device?.brand || 'Unknown brand'}, ${device.os?.name || 'Unknown OS'}, ${device.client?.name || 'Unknown browser'}`;
             const deviceDescription = `${deviceShort}, logged: ${loginTime.toLocaleString()}`;
+
+
+
+            const deviceGroup = classifyDevice(deviceType);
 
             let session = await prisma.sessions.findFirst({
                 where: {
@@ -256,6 +263,7 @@ class Users {
                         location: req.body.location || null,
                         info: deviceDescription,
                         deviceType: device.device?.type || 'Unknown device',
+                        deviceGroup: deviceGroup,
                         browser: device.client?.name || 'Unknown browser',
                     }
                 });
@@ -495,7 +503,7 @@ class Users {
                     where: { id: userId },
                     data: { status: "ACTIVE" }
                 }),
-                prisma.ban.deleteMany({ where: { userId } }) 
+                prisma.ban.deleteMany({ where: { userId } })
             ]);
 
             return res.status(200).json({ message: "User successfully activated" });
@@ -531,10 +539,12 @@ class Users {
     async get_my_data(req, res) {
         let user = req.user;
         try {
-            let session = await checkSession(user.id, req.ip);
-            if (!session) {
-                return res.status(401).json({ message: "not authorized" })
-            }
+            // let session = await checkSession(user.id, req.ip);
+            // if (!session) {
+            //     return res.status(401).json({ message: "not authorized" })
+            // }
+            console.log(user);
+
 
             let data = await prisma.users.findUnique({
                 where: { id: user.id, status: "ACTIVE" },
@@ -544,6 +554,8 @@ class Users {
                     Activation: true
                 },
             });
+            console.log(data);
+
             if (!data) {
                 return res.status(401).json({ message: "not authorized" })
             }
@@ -687,8 +699,12 @@ class Users {
     async browsers_statistics(req, res) {
         try {
             const range = getDateRange(req.path, req.query);
+            const { deviceType } = req.query;
+            const allowedTypes = ['MOBILE', 'DESKTOP'];
+            if (deviceType && !allowedTypes.includes(deviceType.toUpperCase())) {
+                return res.status(400).json({ message: "Invalid deviceType. Use 'MOBILE' or 'DESKTOP'" });
+            }
 
-            // Базовый фильтр — только для пользователей с ролью USER
             const baseWhere = {
                 user: {
                     role: {
@@ -697,29 +713,39 @@ class Users {
                 }
             };
 
-            // Добавляем фильтр по дате, если он есть
-            const whereClause = range ? { ...baseWhere, createdAt: range } : baseWhere;
+
+            const whereClause = {
+                ...baseWhere,
+                ...(range ? { createdAt: range } : {}),
+                ...(deviceType ? { deviceGroup: deviceType.toUpperCase() } : {})
+            };
+            console.log(whereClause);
 
             const allSessionsCount = await prisma.sessions.count({ where: whereClause });
 
             if (allSessionsCount === 0) {
-                // Fallback: последние браузеры для пользователей с ролью USER
-                const fallbackBrowserStats = await prisma.sessions.groupBy({
-                    by: ['browser'],
-                    where: {
-                        user: {
-                            role: {
-                                name: "USER"
-                            }
+                const fallbackWhere = {
+                    user: {
+                        role: {
+                            name: "USER"
                         }
                     },
+                    ...(deviceType ? { deviceGroup: deviceType.toUpperCase() } : {})
+                };
+                console.log(fallbackWhere);
+
+                const fallbackBrowserStats = await prisma.sessions.groupBy({
+                    by: ['browser'],
+                    where: fallbackWhere,
                     _count: { browser: true },
                     orderBy: {
                         _count: {
                             browser: 'desc'
                         }
                     }
+
                 });
+                console.log(fallbackBrowserStats);
 
                 const total = fallbackBrowserStats.reduce((acc, item) => acc + item._count.browser, 0);
 
@@ -735,7 +761,6 @@ class Users {
                 });
             }
 
-            // Основная статистика по браузерам
             const browserStats = await prisma.sessions.groupBy({
                 by: ['browser'],
                 where: whereClause,
@@ -759,8 +784,11 @@ class Users {
         try {
             const range = getDateRange(req.path, req.query);
             const { deviceType } = req.query;
+            const allowedTypes = ['MOBILE', 'DESKTOP'];
+            if (deviceType && !allowedTypes.includes(deviceType.toUpperCase())) {
+                return res.status(400).json({ message: "Invalid deviceType. Use 'MOBILE' or 'DESKTOP'" });
+            }
 
-            // Базовый фильтр — только пользователи с ролью USER
             const baseWhere = {
                 user: {
                     role: {
@@ -769,20 +797,20 @@ class Users {
                 }
             };
 
-            // Добавляем фильтрацию по дате и устройству
+
             const whereClause = {
                 ...baseWhere,
                 ...(range ? { createdAt: range } : {}),
-                ...(deviceType ? { deviceType: deviceType.toUpperCase() } : {})
+                ...(deviceType ? { deviceGroup: deviceType.toUpperCase() } : {})
             };
 
             const allSessionsCount = await prisma.sessions.count({ where: whereClause });
 
-            // Fallback — если ничего не найдено
+
             if (allSessionsCount === 0) {
                 const fallbackWhere = {
                     ...baseWhere,
-                    ...(deviceType ? { deviceType: deviceType.toUpperCase() } : {})
+                    ...(deviceType ? { deviceGroup: deviceType.toUpperCase() } : {})
                 };
 
                 const fallbackStats = await prisma.sessions.groupBy({
@@ -810,7 +838,7 @@ class Users {
                 });
             }
 
-            // Основная статистика
+
             const devicesStats = await prisma.sessions.groupBy({
                 by: ['deviceType'],
                 where: whereClause,
@@ -834,6 +862,13 @@ class Users {
     async user_statistics(req, res) {
         try {
             const range = getDateRange(req.path, req.query);
+            const { deviceType } = req.query;
+
+
+            const allowedTypes = ['MOBILE', 'DESKTOP'];
+            if (deviceType && !allowedTypes.includes(deviceType.toUpperCase())) {
+                return res.status(400).json({ message: "Invalid deviceType. Use 'MOBILE' or 'DESKTOP'" });
+            }
 
             const baseRoleFilter = {
                 status: "ACTIVE",
@@ -844,20 +879,36 @@ class Users {
 
             const where = {
                 ...baseRoleFilter,
-                ...(range ? { createdAt: range } : {})
+                ...(range ? { createdAt: range } : {}),
+                ...(deviceType ? {
+                    Sessions: {
+                        some: {
+                            deviceGroup: deviceType.toUpperCase()
+                        }
+                    }
+                } : {})
             };
 
             const count = await prisma.users.count({ where });
             const total_page = Math.ceil(count / 20);
 
-            // Если статистика пуста — возвращаем последних USER'ов без учета диапазона
+
             if (count === 0) {
-                const recentUsers = await prisma.users.findMany({
-                    where: {
-                        role: {
-                            name: "USER"
-                        }
+                const fallbackWhere = {
+                    role: {
+                        name: "USER"
                     },
+                    ...(deviceType ? {
+                        Sessions: {
+                            some: {
+                                deviceGroup: deviceType.toUpperCase()
+                            }
+                        }
+                    } : {})
+                };
+
+                const recentUsers = await prisma.users.findMany({
+                    where: fallbackWhere,
                     take: 20,
                     orderBy: {
                         createdAt: 'desc'
@@ -877,8 +928,7 @@ class Users {
                 });
             }
 
-            // Если есть статистика — возвращаем количество и страницы
-            res.status(200).json({
+            return res.status(200).json({
                 data: {
                     total_count: count,
                     total_page
@@ -887,17 +937,17 @@ class Users {
 
         } catch (error) {
             console.error('Error User Statistics:', error);
-            res.status(500).json({ message: "Unexpected error. Please try again later." });
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
-
 
     async page_statistics(req, res) {
         try {
             const range = getDateRange(req.path, req.query);
+
             const whereClause = range ? { createdAt: range } : {};
 
-
+         
             const allPageNamesRaw = await prisma.viewPages.findMany({
                 select: { name: true },
                 distinct: ['name'],
@@ -905,14 +955,13 @@ class Users {
 
             const allPageNames = allPageNamesRaw.map(item => item.name);
 
-
             const pageStats = await prisma.viewPages.groupBy({
                 by: ['name'],
                 where: whereClause,
                 _count: { name: true },
             });
 
-
+   
             const result = allPageNames.map(name => {
                 const stat = pageStats.find(p => p.name === name);
                 return {
@@ -924,6 +973,85 @@ class Users {
             return res.status(200).json(result);
         } catch (error) {
             console.error('Error Page Statistic:', error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
+        }
+    }
+
+    async average_session_time(req, res) {
+        try {
+            const dateFilter = getDateRange(req.path, req.query);
+            const { deviceType } = req.query;
+
+            const allowedTypes = ['MOBILE', 'DESKTOP'];
+            if (deviceType && !allowedTypes.includes(deviceType.toUpperCase())) {
+                return res.status(400).json({ message: "Invalid deviceType. Use 'MOBILE' or 'DESKTOP'" });
+            }
+
+            const baseFilter = {
+                NOT: { endDate: null },
+                user: {
+                    role: {
+                        name: 'USER'
+                    }
+                },
+                ...(dateFilter ? { date: dateFilter } : {}),
+                ...(deviceType ? { deviceGroup: deviceType.toUpperCase() } : {})
+            };
+
+            let sessions = await prisma.sessions.findMany({
+                where: baseFilter,
+                select: {
+                    date: true,
+                    endDate: true
+                }
+            });
+
+            // fallback если не найдено
+            if (sessions.length === 0) {
+                const fallbackFilter = {
+                    NOT: { endDate: null },
+                    user: {
+                        role: {
+                            name: 'USER'
+                        }
+                    },
+                    ...(deviceType ? { deviceGroup: deviceType.toUpperCase() } : {})
+                };
+
+                sessions = await prisma.sessions.findMany({
+                    where: fallbackFilter,
+                    orderBy: {
+                        date: 'desc'
+                    },
+                    take: 20,
+                    select: {
+                        date: true,
+                        endDate: true
+                    }
+                });
+
+                if (sessions.length === 0) {
+                    return res.status(404).json({ message: 'No completed sessions for users with role USER' });
+                }
+            }
+
+            const totalMs = sessions.reduce((acc, session) => {
+                return acc + (new Date(session.endDate).getTime() - new Date(session.date).getTime());
+            }, 0);
+
+            const avgMs = totalMs / sessions.length;
+            const totalMinutes = Math.floor(avgMs / 60000);
+            const hours = Math.floor(totalMinutes / 60);
+            const minutes = totalMinutes % 60;
+
+            return res.json({
+                averageSessionTime: `${hours}h ${minutes}m`,
+                totalSessions: sessions.length,
+                fallbackUsed: !!(dateFilter && sessions.length < 20)
+            });
+
+        } catch (error) {
+            console.error('Error calculating average session time:', error);
             return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
@@ -966,84 +1094,10 @@ class Users {
         }
     }
 
-
-    async average_session_time(req, res) {
-        try {
-            const dateFilter = getDateRange(req.path, req.query);
-
-            // Базовый фильтр — завершённые сессии и пользователь с ролью USER
-            const baseFilter = {
-                NOT: { endDate: null },
-                user: {
-                    role: {
-                        name: 'USER'
-                    }
-                },
-                ...(dateFilter ? { date: dateFilter } : {})
-            };
-
-            let sessions = await prisma.sessions.findMany({
-                where: baseFilter,
-                select: {
-                    date: true,
-                    endDate: true
-                }
-            });
-
-            // Если нет данных — fallback: просто последние 20 завершённых USER-сессий
-            if (sessions.length === 0) {
-                sessions = await prisma.sessions.findMany({
-                    where: {
-                        NOT: { endDate: null },
-                        user: {
-                            role: {
-                                name: 'USER'
-                            }
-                        }
-                    },
-                    orderBy: {
-                        date: 'desc'
-                    },
-                    take: 20,
-                    select: {
-                        date: true,
-                        endDate: true
-                    }
-                });
-
-                if (sessions.length === 0) {
-                    return res.status(404).json({ message: 'No completed sessions for users with role USER' });
-                }
-            }
-
-            // Рассчитываем среднее время
-            const totalMs = sessions.reduce((acc, session) => {
-                return acc + (new Date(session.endDate).getTime() - new Date(session.date).getTime());
-            }, 0);
-
-            const avgMs = totalMs / sessions.length;
-            const totalMinutes = Math.floor(avgMs / 60000);
-            const hours = Math.floor(totalMinutes / 60);
-            const minutes = totalMinutes % 60;
-
-            return res.json({
-                averageSessionTime: `${hours}h ${minutes}m`,
-                totalSessions: sessions.length,
-                fallbackUsed: dateFilter && sessions.length < 20 // Просто дополнительный флаг
-            });
-
-        } catch (error) {
-            console.error('Error calculating average session time:', error);
-            return res.status(500).json({ message: "Unexpected error. Please try again later." });
-        }
-    }
-
-
     async logout(req, res) {
         try {
             const sessionId = req.sessionId;
             const userId = req.user.id;
-
 
             res.clearCookie('refresh_token', {
                 httpOnly: true,
@@ -1052,17 +1106,14 @@ class Users {
             });
 
 
-            await prisma.sessions.delete({ where: { id: sessionId } });
+            await prisma.sessions.delete({
+                where: { id: sessionId },
+            }).catch(err => {
 
-
-            const remainingSessions = await prisma.sessions.count({ where: { userId } });
-
-            if (remainingSessions === 0) {
-                await prisma.users.update({
-                    where: { id: userId },
-                    data: { status: 'PENDING' }
-                });
-            }
+                if (err.code !== 'P2025') {
+                    throw err;
+                }
+            });
 
             return res.status(200).json({ message: "Logged out successfully" });
 
@@ -1071,7 +1122,6 @@ class Users {
             return res.status(500).json({ message: "Logout failed. Try again later." });
         }
     }
-
 
     async getLogs(req, res) {
         try {

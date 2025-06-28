@@ -1506,151 +1506,147 @@ paths:
 
 
   /users/average-time-statistics/{period}:
-   get:
-    summary: Get average session time statistics
-    tags:
-      - Statistics
-    parameters:
-      - name: period
-        in: path
-        required: true
-        schema:
-          type: string
-          enum: [day, month, year, custom]
-        description: Period to filter sessions
-      - name: day
-        in: query
-        schema:
-          type: integer
-        description: Used with custom period (e.g., 2)
-      - name: month
-        in: query
-        schema:
-          type: integer
-          minimum: 1
-          maximum: 12
-        description: Used with custom period (e.g., 06 )
-      - name: year
-        in: query
-        schema:
-          type: integer
-        description: Used with custom period (e.g., 2025)
-    responses:
-      '200':
-        description: Average session time returned
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                averageSessionTime:
-                  type: string
-                  example: "1h 32m"
-                totalSessions:
-                  type: integer
-      '404':
-        description: No completed sessions found
-      '500':
-        description: Internal server error
+    get:
+      summary: Получить среднюю продолжительность сессии
+      description: |
+        Возвращает среднее время завершённых сессий пользователей с ролью "USER".
+        Если в заданном диапазоне нет завершённых сессий, возвращаются последние 20.
+      tags:
+        - Statistics
+      parameters:
+        - name: period
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [day, month, year, custom]
+          description: Период для фильтрации (день, месяц, год или custom)
+        - name: day
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: День (только для custom)
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+          description: Месяц (только для custom)
+        - name: year
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Год (только для custom)
+        - name: deviceType
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [MOBILE, DESKTOP]
+          description: Фильтрация по типу устройства (используется поле deviceGroup)
+      responses:
+        '200':
+          description: Средняя продолжительность сессии
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  averageSessionTime:
+                    type: string
+                    example: "1h 27m"
+                  totalSessions:
+                    type: integer
+                    example: 42
+                  fallbackUsed:
+                    type: boolean
+                    example: false
+        '404':
+          description: Нет завершённых сессий
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: No completed sessions for users with role USER
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unexpected error. Please try again later.
 
 
   /users/browsers_statistics/{period}:
-   get:
-    summary: Get statistics of used browsers
-    tags:
-      - Statistics
-    parameters:
-      - name: period
-        in: path
-        required: true
-        schema:
-          type: string
-          enum: [day, month, year, custom]
-      - name: day
-        in: query
-        schema:
-          type: integer
-          format: date
-        description: Used with custom period
-      - name: month
-        in: query
-        schema:
-          type: integer
-        description: Used with custom period
-      - name: year
-        in: query
-        schema:
-          type: integer
-        description: Used with custom period
-    responses:
-      '200':
-        description: Browsers statistics with percentages
-        content:
-          application/json:
-            schema:
-              type: array
-              items:
-                type: object
-                properties:
-                  browser:
-                    type: string
-                  count:
-                    type: integer
-                  percentage:
-                    type: string
-                    example: "25%"
-      '500':
-        description: Internal server error
+    get:
+      summary: Get browser usage statistics by period and device type
+      tags:
+        - Statistics
+      parameters:
+        - name: period
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [day, month, year, custom]
+          description: Time period for statistics
+        - name: day
+          in: query
+          schema:
+            type: integer
+          description: Used with custom period (e.g., 27)
+        - name: month
+          in: query
+          schema:
+            type: integer
+          description: Used with custom period (e.g., 6 for June)
+        - name: year
+          in: query
+          schema:
+            type: integer
+          description: Used with custom period (e.g., 2025)
+        - name: deviceType
+          in: query
+          schema:
+            type: string
+            enum: [MOBILE, DESKTOP]
+          description: Filter statistics by device type (mobile or desktop)
+      responses:
+        '200':
+          description: Browsers statistics with percentages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    browser:
+                      type: string
+                      example: "Chrome"
+                    count:
+                      type: integer
+                      example: 123
+                    percentage:
+                      type: string
+                      example: "25%"
+        '500':
+          description: Internal server error
 
 
   /users/devices-statistics/{period}:
-   get:
-    summary: Get statistics of device types
-    tags:
-      - Statistics
-    parameters:
-      - name: period
-        in: path
-        required: true
-        schema:
-          type: string
-          enum: [day, month, year, custom]
-      - name: day
-        in: query
-        schema:
-          type: integer
-      - name: month
-        in: query
-        schema:
-          type: integer
-      - name: year
-        in: query
-        schema:
-          type: integer
-    responses:
-      '200':
-        description: Devices statistics with percentages
-        content:
-          application/json:
-            schema:
-              type: array
-              items:
-                type: object
-                properties:
-                  deviceType:
-                    type: string
-                  count:
-                    type: integer
-                  percentage:
-                    type: string
-                    example: "40%"
-      '500':
-        description: Internal server error
-
-
-  /users/user-statistics/{period}:
     get:
-      summary: Get active user statistics
+      summary: Get statistics of device types
       tags:
         - Statistics
       parameters:
@@ -1662,50 +1658,179 @@ paths:
             enum: [day, month, year, custom]
         - name: day
           in: query
-          required: false
           schema:
             type: integer
-            example: "12"
+          description: Used with custom period
         - name: month
           in: query
-          required: false
           schema:
             type: integer
-            example: 6
-            minimum: 1
-            maximum: 12
+          description: Used with custom period
         - name: year
           in: query
-          required: false
           schema:
             type: integer
-            example: 2025
+          description: Used with custom period
+        - name: deviceType
+          in: query
+          schema:
+            type: string
+            enum: [MOBILE, DESKTOP]
+          description: Filter by device group (Mobile or Desktop)
       responses:
         '200':
-          description: User count and page count
+          description: Devices statistics with percentages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    deviceType:
+                      type: string
+                      example: "smartphone"
+                    count:
+                      type: integer
+                      example: 25
+                    percentage:
+                      type: string
+                      example: "40%"
+        '400':
+          description: Invalid deviceType provided
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  data:
-                    type: object
-                    properties:
-                      total_count:
-                        type: integer
-                        example: 123
-                      total_page:
-                        type: integer
-                        example: 5
+                  message:
+                    type: string
+                    example: "Invalid deviceType. Use 'MOBILE' or 'DESKTOP'"
         '500':
           description: Internal server error
-  
+
+  /users/user-statistics/{period}:
+    get:
+      summary: Get active user statistics
+      description: >
+        Возвращает количество активных пользователей с ролью USER за указанный период.  
+        Можно дополнительно отфильтровать по типу устройства (`deviceType`: MOBILE или DESKTOP).  
+        Если статистика пуста — возвращаются последние зарегистрированные пользователи с ролью USER.
+      tags:
+        - Statistics
+      parameters:
+        - name: period
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [day, month, year, custom]
+          description: Период фильтрации
+        - name: day
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: День (только для custom)
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+          description: Месяц (только для custom)
+        - name: year
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Год (только для custom)
+        - name: deviceType
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [MOBILE, DESKTOP]
+          description: Фильтрация по типу устройства
+      responses:
+        '200':
+          description: Статистика по активным пользователям
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          total_count:
+                            type: integer
+                            example: 123
+                          total_page:
+                            type: integer
+                            example: 7
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                        example: No statistics found in given range. Returning recent users with role USER.
+                      data:
+                        type: object
+                        properties:
+                          total_count:
+                            type: integer
+                            example: 0
+                          total_page:
+                            type: integer
+                            example: 0
+                          recent_users:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                  example: "clwu48iop0000ugv2n1234abc"
+                                name:
+                                  type: string
+                                  example: "Ali"
+                                createdAt:
+                                  type: string
+                                  format: date-time
+                                role:
+                                  type: object
+                                  properties:
+                                    name:
+                                      type: string
+                                      example: USER
+        '400':
+          description: Некорректный тип устройства
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Invalid deviceType. Use 'MOBILE' or 'DESKTOP'
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Unexpected error. Please try again later.
 
   /users/page-statistics/{period}:
     get:
       summary: Получить статистику по просмотрам страниц
       description: |
-        Возвращает количество просмотров каждой страницы с возможностью фильтрации по периоду.
+        Возвращает количество просмотров каждой страницы с возможностью фильтрации по периоду и типу устройства.
         Если данных за указанный период нет — возвращает последние самые просматриваемые страницы.
       tags:
         - Statistics
@@ -1737,42 +1862,39 @@ paths:
           schema:
             type: integer
           description: Год (только для custom)
+        - name: deviceType
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [MOBILE, DESKTOP]
+          description: Фильтрация по типу устройства (используется deviceGroup)
       responses:
         '200':
           description: Успешный ответ со статистикой по страницам
           content:
             application/json:
               schema:
-                oneOf:
-                  - type: array
-                    items:
-                      type: object
-                      properties:
-                        name:
-                          type: string
-                          example: /home
-                        count:
-                          type: integer
-                          example: 120
-                        percentage:
-                          type: string
-                          example: "40%"
-                  - type: object
-                    properties:
-                      message:
-                        type: string
-                        example: No data found in the given range. Returning recent page stats.
-                      data:
-                        type: array
-                        items:
-                          type: object
-                          properties:
-                            name:
-                              type: string
-                            count:
-                              type: integer
-                            percentage:
-                              type: string
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      example: /home
+                    count:
+                      type: integer
+                      example: 120
+        '400':
+          description: Неверный тип устройства
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Invalid deviceType. Use 'MOBILE' or 'DESKTOP'
         '500':
           description: Внутренняя ошибка сервера
           content:
@@ -1784,7 +1906,6 @@ paths:
                     type: string
                     example: Unexpected error. Please try again later.
 
-      
   /users/log-page-view:
     post:
       summary: Сохранить просмотр страницы

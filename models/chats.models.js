@@ -50,11 +50,10 @@ class Chats {
             const sessions = await prisma.chatSession.findMany({
                 where: {
                     status: {
-                        in: [ChatStatus.OPEN, ChatStatus.ACTIVE],
+                        in: [ChatStatus.OPEN, ChatStatus.ACTIVE, ChatStatus.ARCHIVED, ChatStatus.CLOSED],
                     },
                 },
                 include: {
-
                     client: {
                         select: {
                             id: true,
@@ -100,7 +99,7 @@ class Chats {
     async connect_chat_session(req, res) {
         const adminId = req.user.id;
         const { sessionId } = req.params;
-   
+
 
         try {
             const session = await prisma.chatSession.findFirst({
@@ -122,6 +121,12 @@ class Chats {
                     status: "ACTIVE",
                 },
             });
+            
+            getIo().to(sessionId).emit("admin_connected", {
+                sessionId,
+                adminId,
+            });
+
 
             res.status(200).json({
                 message: "Admin connected to chat successfully",
@@ -137,7 +142,7 @@ class Chats {
 
     async send_message(req, res) {
         const { sessionId } = req.params;
-        const { content ,mediaUrl} = req.body;
+        const { content, mediaUrl } = req.body;
         const senderId = req.user.id;
 
         if (!content && !mediaUrl) {
@@ -177,7 +182,7 @@ class Chats {
 
 
 
-           
+
             if (req.user.role === "ADMIN" && messageCount === 1) {
                 const sessionWithoutAdmin = await prisma.chatSession.findFirst({ where: { id: sessionId, adminId: null } })
 
@@ -196,10 +201,10 @@ class Chats {
                     sessionId,
                     senderId,
                     content,
-                    mediaUrl:mediaUrl?mediaUrl:null,
+                    mediaUrl: mediaUrl ? mediaUrl : null,
                 },
             });
-            // Отправка события по сокету
+
             getIo().to(sessionId).emit("new_message", {
                 id: message.id,
                 sessionId,
@@ -209,7 +214,22 @@ class Chats {
                 createdAt: message.createdAt,
             });
 
-            // Email клиенту
+            if (req.user.role === "USER") {
+                getIo().to("admins").emit("client_started_chat", {
+                    sessionId,
+                    content,
+                    mediaUrl,
+                    senderId,
+                    createdAt: message.createdAt,
+                    client: {
+                        id: session.client.id,
+                        username: session.client.username,
+                        email: session.client.email
+                    }
+                });
+            }
+
+
             if (req.user.role === "ADMIN" && session.client?.email) {
                 const clientEmail = session.client.email;
                 const subject = "Новый ответ от администратора";
