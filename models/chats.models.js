@@ -121,7 +121,7 @@ class Chats {
                     status: "ACTIVE",
                 },
             });
-            
+
             getIo().to(sessionId).emit("admin_connected", {
                 sessionId,
                 adminId,
@@ -360,26 +360,33 @@ class Chats {
     async addFavorite(req, res) {
         const { messageId } = req.params;
 
-
         try {
-            const alreadyExists = await prisma.favoriteMessage.findUnique({
+            const favorite = await prisma.favoriteMessage.findUnique({
                 where: { messageId },
             });
+            
+            if (favorite) {
+          
+                await prisma.favoriteMessage.delete({
+                    where: { messageId },
+                });
 
-            if (alreadyExists) {
-                return res.status(400).json({ message: 'Message already in favorites' });
+                return res.status(200).json({ message: 'Removed from favorites' });
+            } else {
+             
+                await prisma.favoriteMessage.create({
+                    data: { messageId },
+                });
+
+                return res.status(201).json({ message: 'Added to favorites' });
             }
 
-            await prisma.favoriteMessage.create({
-                data: { messageId },
-            });
-
-            return res.status(201).json({ message: 'Added to favorites' });
         } catch (error) {
-            console.error('Add favorite error:', error);
+            console.error('Toggle favorite error:', error);
             return res.status(500).json({ message: 'Server error' });
         }
     }
+
 
     async removeFavorite(req, res) {
         const { messageId } = req.params;
