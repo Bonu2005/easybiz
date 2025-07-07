@@ -644,7 +644,7 @@ class Users {
             if (currentSessionId === session.id) {
                 return res.status(400).json({ message: "You cannot delete the session you are currently using" });
             }
-            await prisma.users.update({ where: { id: user.id }, data: { status: "PENDING" } })
+         
             await prisma.sessions.delete({ where: { id } });
             return res.json({ message: "Session deleted" });
         } catch (error) {
