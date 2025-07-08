@@ -4,7 +4,7 @@ function userValidation(requestBody){
       let userSchema =Joi.object({
         username:Joi.string().required(),
         email:Joi.string().required(),
-        password:Joi.string().required().max(40).min(6),
+        password:Joi.string().required().min(6),
         roleId:Joi.string().uuid().required(),
         image:Joi.string(),
         telegram:Joi.string().min(3).optional(),
