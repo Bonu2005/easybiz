@@ -23,7 +23,7 @@ enum UsersStatus {
 model Email_verification {
   id          String   @id @default(uuid())
   userId      String
-  user        Users    @relation(fields: [userId], references: [id])
+  user        Users    @relation(fields: [userId], references: [id],onDelete: Cascade)
   email       String   @unique
   secret      String
   otpVerified Boolean  @default(false)
@@ -73,14 +73,14 @@ model UserRole {
   id     String @id @default(uuid())
   userId String
   roleId String
-  user   Users  @relation(fields: [userId], references: [id])
-  role   Role   @relation(fields: [roleId], references: [id])
+  user   Users  @relation(fields: [userId], references: [id],onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id],onDelete: Cascade)
 }
 
 model Ban {
   id         String    @id @default(uuid())
   userId     String
-  user       Users     @relation(fields: [userId], references: [id])
+  user       Users     @relation(fields: [userId], references: [id],onDelete: Cascade)
   ban_reason String
   ban_start  DateTime  @default(now())
   ban_end    DateTime? @default(now()) @updatedAt
@@ -90,7 +90,7 @@ model Activation {
   id                String      @id @default(uuid())
   userId            String
   activation_status UsersStatus
-  user              Users       @relation(fields: [userId], references: [id])
+  user              Users       @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt         DateTime    @default(now())
 }
 
@@ -102,7 +102,7 @@ model Reset_Password {
   otpVerified Boolean  @default(false)
   expiresAt   DateTime
   createdAt   DateTime @default(now())
-  user        Users    @relation(fields: [userId], references: [id])
+  user        Users    @relation(fields: [userId], references: [id] , onDelete: Cascade)
 }
 
 model Sessions {
@@ -113,7 +113,7 @@ model Sessions {
   date        DateTime  @default(now())
   endDate     DateTime?
   userId      String
-  user        Users     @relation(fields: [userId], references: [id])
+  user        Users     @relation(fields: [userId], references: [id],onDelete: Cascade)
   deviceType  String
   deviceGroup String
   browser     String
@@ -123,14 +123,14 @@ model Sessions {
 model ChatSession {
   id        String        @id @default(uuid())
   clientId  String
-  client    Users         @relation("ClientChatSessions", fields: [clientId], references: [id])
+  client    Users         @relation("ClientChatSessions", fields: [clientId], references: [id],onDelete: Cascade)
   adminId   String?
-  admin     Users?        @relation("AdminChatSessions", fields: [adminId], references: [id])
+  admin     Users?        @relation("AdminChatSessions", fields: [adminId], references: [id],onDelete: Cascade)
   status    ChatStatus    @default(OPEN)
   messages  ChatMessage[]
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
-  Users     Users?        @relation(fields: [usersId], references: [id])
+  Users     Users?        @relation(fields: [usersId], references: [id] ,onDelete: Cascade)
   usersId   String?
 }
 
@@ -144,9 +144,9 @@ enum ChatStatus {
 model ChatMessage {
   id              String            @id @default(uuid())
   sessionId       String
-  session         ChatSession       @relation(fields: [sessionId], references: [id])
+  session         ChatSession       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   senderId        String
-  sender          Users             @relation(fields: [senderId], references: [id])
+  sender          Users             @relation(fields: [senderId], references: [id],onDelete: Cascade)
   content         String
   isRead          Boolean           @default(false)
   createdAt       DateTime          @default(now())
@@ -157,7 +157,7 @@ model ChatMessage {
 model Projects {
   id          String   @id @default(uuid())
   userId      String
-  user        Users    @relation(fields: [userId], references: [id])
+  user        Users    @relation(fields: [userId], references: [id],onDelete: Cascade)
   name        String
   description String
   created_at  DateTime
@@ -168,7 +168,7 @@ model Projects {
 model Pages {
   id              String   @id @default(uuid())
   projectId       String
-  projects        Projects @relation(fields: [projectId], references: [id])
+  projects        Projects @relation(fields: [projectId], references: [id],onDelete: Cascade)
   title           String
   slug            String
   status          String
@@ -182,7 +182,7 @@ model Pages {
 model Blocks {
   id      String @id @default(uuid())
   pageId  String
-  page    Pages  @relation(fields: [pageId], references: [id])
+  page    Pages  @relation(fields: [pageId], references: [id],onDelete: Cascade)
   type    String
   content Json
   order   String
@@ -213,7 +213,7 @@ model Domains {
 model RequestLog {
   id             String   @id @default(uuid())
   userId         String?
-  user           Users?   @relation(fields: [userId], references: [id])
+  user           Users?   @relation(fields: [userId], references: [id],onDelete: Cascade)
   method         String
   url            String
   ip             String
@@ -229,7 +229,7 @@ model FavoriteMessage {
   id String @id @default(uuid())
 
   messageId String
-  message   ChatMessage @relation(fields: [messageId], references: [id])
+  message   ChatMessage @relation(fields: [messageId], references: [id],onDelete: Cascade)
   createdAt DateTime    @default(now())
 
   @@unique(messageId)

@@ -13,13 +13,12 @@ const DeviceDetektor = require("device-detector-js");
 const checkSession = require("../composables/utils/check_sessions.init");
 const updateSelfValidation = require("../validations/updateSelf.validation");
 const getDateRange = require('../composables/utils/statistics_date.helper');
-const { da } = require("date-fns/locale");
 const classifyDevice = require("../composables/utils/classifyDevice.init");
+const validateEmail = require("../validations/password.validation");
 
 otp.totp.options = { step: 120, digits: 6 };
 
 class Users {
-
     constructor() {
         this.deviceDetector = new DeviceDetektor()
     }
@@ -39,19 +38,43 @@ class Users {
             return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
+    
+    async get_admins(req, res) {
+        try {
+            let find_users_count = await prisma.users.count()
+            let find_role = await prisma.role.findFirst({ where: { name: "ADMIN" } })
+            console.log(find_role.id);
+
+            let find_users = await prisma.users.findMany({ include: { role: true }, where: { roleId: find_role.id } })
+            let total_page = Math.ceil(find_users_count / 20)
+            return res.status(200).json({ data: find_users, total_count: find_users_count, total_page })
+        } catch (error) {
+            console.error("Get users error:", error);
+            return res.status(500).json({ message: "Unexpected error. Please try again later." });
+        }
+    }
 
     async signup(req, res) {
+        let { username, email, password, roleId, telegram, facebook, instagram } = req.body;
+        const emailValidation = validateEmail(email);
+
+        if (!emailValidation.isValid) {
+            return res.status(400).json({
+                message: "Email недействителен.",
+                errors: emailValidation.errors
+            });
+        }
+        if (!isStrongPassword(password)) {
+            return res.status(400).json({ message: "Password should have minimum one UpperCase one LowerCase and Number and without anyother symbols" })
+        }
         let { error } = userValidation(req.body);
 
         if (error) {
             return res.status(400).json({ message: error.message });
         }
-        let { username, email, password, roleId, telegram, facebook, instagram } = req.body;
 
 
-        if (!isStrongPassword(password)) {
-            return res.status(400).json({ message: "Password should have minimum one UpperCase one LowerCase and Number" })
-        }
+
         try {
             let exist_role = await prisma.role.findUnique({ where: { id: roleId } })
             let exist_user = await prisma.users.findFirst({
@@ -644,7 +667,7 @@ class Users {
             if (currentSessionId === session.id) {
                 return res.status(400).json({ message: "You cannot delete the session you are currently using" });
             }
-         
+
             await prisma.sessions.delete({ where: { id } });
             return res.json({ message: "Session deleted" });
         } catch (error) {
@@ -947,7 +970,7 @@ class Users {
 
             const whereClause = range ? { createdAt: range } : {};
 
-         
+
             const allPageNamesRaw = await prisma.viewPages.findMany({
                 select: { name: true },
                 distinct: ['name'],
@@ -961,7 +984,7 @@ class Users {
                 _count: { name: true },
             });
 
-   
+
             const result = allPageNames.map(name => {
                 const stat = pageStats.find(p => p.name === name);
                 return {
@@ -1055,7 +1078,6 @@ class Users {
             return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
-
 
     async end_time_session(req, res) {
         try {
@@ -1159,7 +1181,6 @@ class Users {
         }
     }
 
-
     async logPageView(req, res) {
         try {
             let { name } = req.body;
@@ -1180,6 +1201,23 @@ class Users {
             return res.status(500).json({ message: 'Server error' });
         }
 
+    }
+
+    async deleteUser(req, res) {
+        try {
+            const { email } = req.body
+            const find_email = await prisma.users.findFirst({ where: { email } })
+            if (!find_email) {
+                return res.status(404).json({ message: "User with this email not found " })
+            }
+            const del = await prisma.users.delete({ where: { email } })
+            console.log("User deleted");
+            return res.status(200).json({ message: "User deleted succesfully" })
+
+        } catch (error) {
+            console.error('Error delete User:', error);
+            return res.status(500).json({ message: 'Server error' });
+        }
     }
 
 }

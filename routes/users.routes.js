@@ -12,15 +12,22 @@ const uploadMedia = require("../config/multer/multerMedia")
 
 //--------------------------------------------------------------------------------------------------------------------------------------------------------USERS
 
+Router.delete("/del-user",middleWare,requestLogger,passedRole(["ADMIN", "SUPER ADMIN"]), (req, res) => 
+    {
+    Users.deleteUser(req, res)
+});
+
 Router.get("/", (req, res) => {
     Users.get_users(req, res)
 })
 
+Router.get("/admins", (req, res) => {
+    Users.get_admins(req, res)
+})
 
 Router.post("/sign-up", (req, res) => {
     Users.signup(req, res);
 })
-
 
 Router.post("/send-otp", (req, res) => {
     Users.send_otp(req, res)
@@ -46,15 +53,15 @@ Router.patch("/update-self/:id", middleWare, requestLogger,selfPolice(["USER", "
 })
 
 
-Router.post("/send-otp-reset",requestLogger, (req, res) => {
+Router.post("/send-otp-reset",middleWare,requestLogger, (req, res) => {
     Users.send_otp_reset(req, res)
 })
 
-Router.post("/verify-otp-reset", requestLogger,(req, res) => {
+Router.post("/verify-otp-reset",middleWare, requestLogger,(req, res) => {
     Users.verify_otp_reset(req, res)
 })
 
-Router.post("/reset-password", requestLogger,(req, res) => {
+Router.post("/reset-password",middleWare, requestLogger,(req, res) => {
     Users.reset_password(req, res)
 })
 
@@ -307,6 +314,7 @@ Router.delete("/favorites-del/:messageId",middleWare,passedRole(["ADMIN"]), (req
 Router.get("/favorites",middleWare, (req, res) => {
     Chats.getFavorites(req, res)
 });
+
 
 
 
