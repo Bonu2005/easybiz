@@ -2,7 +2,6 @@ const prisma = require("../database/config.db")
 const otp_mailer = require("../composables/machine/otp.init");
 const { ChatStatus } = require("../src/generated/prisma");
 const { getIo } = require("../config/socket/channel");
-const { json } = require("express");
 class Chats {
 
 
@@ -364,16 +363,16 @@ class Chats {
             const favorite = await prisma.favoriteMessage.findUnique({
                 where: { messageId },
             });
-            
+
             if (favorite) {
-          
+
                 await prisma.favoriteMessage.delete({
                     where: { messageId },
                 });
 
                 return res.status(200).json({ message: 'Removed from favorites' });
             } else {
-             
+
                 await prisma.favoriteMessage.create({
                     data: { messageId },
                 });
@@ -444,6 +443,24 @@ class Chats {
             console.error("Error to get messages:", err);
             res.status(500).json({ message: "Something get wrong please try again" });
         }
+    }
+
+    async upload_file_media(req, res) {
+        try {
+            if (!req.file) {
+                return res.status(400).json({ message: "No file uploaded" });
+            }
+
+            const fileUrl = `http://localhost:3300/users/file/${req.file.filename}`;
+            return res.status(201).json({
+                message: "File uploaded successfully",
+                mediaUrl: fileUrl
+            });
+        } catch (err) {
+            console.error("Upload error:", err);
+            return res.status(500).json({ message: "Server error" });
+        }
+
     }
 }
 
