@@ -1,14 +1,10 @@
 function isStrongPassword(password) {
-  const hasUpperCase = /[A-Z]/.test(password);
+  const hasUpperCase = /[A-Z]/.test(password); 
   const hasLowerCase = /[a-z]/.test(password);
   const hasDigit = /\d/.test(password);
   const hasForbiddenSymbols = /[.,\/|[\]{}()^%#]/.test(password);
-
   return hasUpperCase && hasLowerCase && hasDigit && !hasForbiddenSymbols;
 }
-
-module.exports = isStrongPassword;
-
 
 const validTlds = new Set([
   "com", "net", "org", "edu", "gov", "mil", "int", "biz", "info", "name", "pro", "aero", "coop", "museum",
@@ -64,5 +60,5 @@ function validateEmail(email) {
   };
 }
 
-module.exports = validateEmail;
+module.exports = {validateEmail,isStrongPassword};
 

@@ -9,6 +9,7 @@ class Admins {
     constructor() {
         this.deviceDetector = new DeviceDetektor()
     }
+
     async end_time_session(req, res) {
         try {
             const { sessionId, endDate } = req.body;
@@ -45,6 +46,7 @@ class Admins {
             return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
+    
 
     async ban_user(req, res) {
         try {
@@ -124,8 +126,8 @@ class Admins {
             if (!find_email) {
                 return res.status(404).json({ message: "User with this email not found " })
             }
-            const del = await prisma.users.delete({ where: { email } })
-            console.log("User deleted");
+            await prisma.users.delete({ where: { email } })
+           
             return res.status(200).json({ message: "User deleted succesfully" })
 
         } catch (error) {

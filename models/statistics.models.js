@@ -31,7 +31,6 @@ class Statistic {
                 ...(range ? { createdAt: range } : {}),
                 ...(deviceType ? { deviceGroup: deviceType.toUpperCase() } : {})
             };
-            console.log(whereClause);
 
             const allSessionsCount = await prisma.sessions.count({ where: whereClause });
 
@@ -318,7 +317,7 @@ class Statistic {
                 }
             });
 
-            // fallback если не найдено
+
             if (sessions.length === 0) {
                 const fallbackFilter = {
                     NOT: { endDate: null },
@@ -467,8 +466,6 @@ class Statistic {
         try {
             let find_users_count = await prisma.users.count()
             let find_role = await prisma.role.findFirst({ where: { name: "ADMIN" } })
-            console.log(find_role.id);
-
             let find_users = await prisma.users.findMany({ include: { role: true }, where: { roleId: find_role.id } })
             let total_page = Math.ceil(find_users_count / 20)
             return res.status(200).json({ data: find_users, total_count: find_users_count, total_page })
@@ -483,8 +480,6 @@ class Statistic {
         try {
             let find_users_count = await prisma.users.count()
             let find_role = await prisma.role.findFirst({ where: { name: "USER" } })
-            console.log(find_role.id);
-
             let find_users = await prisma.users.findMany({ include: { role: true }, where: { roleId: find_role.id } })
             let total_page = Math.ceil(find_users_count / 20)
             return res.status(200).json({ data: find_users, total_count: find_users_count, total_page })

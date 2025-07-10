@@ -18,12 +18,12 @@ function getDateRange(path, query) {
 if (path.endsWith("/custom")) {
     const { date, month, year } = query;
 
-    // Все параметры приходят как строки, надо привести к числу
+    
     const d = date ? parseInt(date) : null;
     const m = month ? parseInt(month) : null;
     const y = year ? parseInt(year) : null;
 
-    // Если есть date, month, year — вернуть конкретный день
+
     if (d && m && y) {
       const fullDate = new Date(y, m - 1, d);
       if (isNaN(fullDate.getTime())) return undefined;
@@ -34,7 +34,7 @@ if (path.endsWith("/custom")) {
       };
     }
 
-    // Если есть только month и year — вернуть месяц
+    
     if (m && y) {
       const monthDate = new Date(y, m - 1, 1);
       return {
@@ -43,7 +43,7 @@ if (path.endsWith("/custom")) {
       };
     }
 
-    // Если только год
+
     if (y) {
       const yearDate = new Date(y, 0, 1);
       return {

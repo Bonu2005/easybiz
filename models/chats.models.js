@@ -328,7 +328,7 @@ class Chats {
                 return res.status(404).json({ message: "Chat session not found" });
             }
 
-            // Обновляем статус
+        
             await prisma.chatSession.update({
                 where: { id: sessionId },
                 data: { status: 'ARCHIVED' }

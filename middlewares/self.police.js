@@ -1,8 +1,6 @@
 const jwt = require("jsonwebtoken")
 
 function selfPolice(roles) {
-   console.log(roles);
-
    return (req, res, next) => {
 
       let { id } = req.params;

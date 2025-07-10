@@ -1805,6 +1805,25 @@ paths:
                     type: string
                     example: Unexpected error. Please try again later.
 
+
+  /online-count:
+    get:
+      summary: Получить количество онлайн-пользователей
+      description: Возвращает текущее количество пользователей, подключённых через WebSocket.
+      tags:
+        - Statistics
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  onlineUsers:
+                    type: integer
+                    example: 7
+
   /statistics/page-statistics/{period}:
     get:
       summary: Получить статистику по просмотрам страниц

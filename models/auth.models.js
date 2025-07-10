@@ -5,10 +5,10 @@ const bcrypt = require("bcrypt")
 const TokenService = require("../composables/machine/token.init");
 const stringToHash = require("../composables/utils/hash.init");
 const userValidation = require("../validations/user.validation");
-const isStrongPassword = require("../validations/password.validation");
+const {isStrongPassword} = require("../validations/password.validation");
 const DeviceDetektor = require("device-detector-js");
 const classifyDevice = require("../composables/utils/classifyDevice.init");
-const validateEmail = require("../validations/password.validation");
+const {validateEmail} = require("../validations/password.validation");
 
 otp.totp.options = { step: 120, digits: 6 };
 
@@ -18,7 +18,10 @@ class Auth {
     }
 
     async signup(req, res) {
+       
         let { username, email, password, roleId, telegram, facebook, instagram } = req.body;
+        console.log(req.body);
+        
         const emailValidation = validateEmail(email);
 
         if (!emailValidation.isValid) {
@@ -27,7 +30,13 @@ class Auth {
                 errors: emailValidation.errors
             });
         }
+
+        
+    
+        
         if (!isStrongPassword(password)) {
+            console.log(1);
+            
             return res.status(400).json({ message: "Password should have minimum one UpperCase one LowerCase and Number and without anyother symbols" })
         }
         let { error } = userValidation(req.body);
@@ -212,7 +221,7 @@ class Auth {
         try {
             const { email, password } = req.body;
 
-            const user = await prisma.users.findUnique({ where: { email } });
+            const user = await prisma.users.findUnique({ where: { email ,status:"ACTIVE"} });
             if (!user) {
                 return res.status(404).json({ message: "User with this email not found" });
             }
@@ -307,7 +316,6 @@ class Auth {
         }
 
     }
-
 
 }
 module.exports = new Auth();

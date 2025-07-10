@@ -4,7 +4,7 @@ const prisma = require("../database/config.db")
 const bcrypt = require("bcrypt")
 const stringToHash = require("../composables/utils/hash.init");
 const resetPasswordValidation = require("../validations/resetPassword.validation");
-const isStrongPassword = require("../validations/password.validation");
+const {isStrongPassword} = require("../validations/password.validation");
 const DeviceDetektor = require("device-detector-js");
 const checkSession = require("../composables/utils/check_sessions.init");
 const updateSelfValidation = require("../validations/updateSelf.validation");
@@ -18,13 +18,7 @@ class Users {
     async get_my_data(req, res) {
         let user = req.user;
         try {
-            // let session = await checkSession(user.id, req.ip);
-            // if (!session) {
-            //     return res.status(401).json({ message: "not authorized" })
-            // }
-            console.log(user);
-
-
+   
             let data = await prisma.users.findUnique({
                 where: { id: user.id, status: "ACTIVE" },
                 include: {
@@ -33,7 +27,7 @@ class Users {
                     Activation: true
                 },
             });
-            console.log(data);
+    
 
             if (!data) {
                 return res.status(401).json({ message: "not authorized" })
@@ -44,6 +38,7 @@ class Users {
             return res.status(500).json({ message: "Unexpected error. Please try again later." });
         }
     }
+
     async update_user(req, res) {
         try {
 
@@ -75,7 +70,6 @@ class Users {
                 });
             }
 
-            console.log(req.body);
 
             let updated_user = await prisma.users.update({ where: { id: req.user.id }, data: { username, telegram, facebook, instagram } })
             return res.status(200).json({ message: "Username updated succesfully", updated_user })
@@ -155,12 +149,12 @@ class Users {
         try {
             const { otp_code, email } = req.body;
 
-            const user = await prisma.users.findUnique({ where: { email } });
+            const user = await prisma.users.findUnique({ where: { email ,status:"ACTIVE"} });
             if (!user) {
                 return res.status(404).json({ message: "User not found" });
             }
 
-            const request = await prisma.reset_Password.findUnique({ where: { email } });
+            const request = await prisma.reset_Password.findFirst({ where: { email } });
             if (!request || new Date() > request.expiresAt) {
                 return res.status(400).json({ message: "OTP expired. Please request again." });
             }
@@ -200,7 +194,8 @@ class Users {
                 return res.status(400).json({ message: "Password should include uppercase, lowercase and number." });
             }
 
-            const user = await prisma.users.findUnique({ where: { email } });
+            const user = await prisma.users.findUnique({ where: { email ,status:"ACTIVE"} });
+
             if (!user) {
                 return res.status(404).json({ message: "User not found" });
             }
@@ -249,8 +244,6 @@ class Users {
         const user = req.user;
         const { id } = req.params;
         const currentSessionId = req.sessionId
-        console.log(currentSessionId);
-
         try {
             const session = await prisma.sessions.findUnique({ where: { id } });
             if (!session) {
@@ -277,9 +270,7 @@ class Users {
             const userId = req.user.id;
             const filename = req.file.filename;
             const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-            console.log(1);
-
-            console.log(file.mimetype);
+           
             if (!allowedTypes.includes(file.mimetype)) {
 
                 return res.status(400).json({ message: "You can download only images (jpeg, png, webp)" });
@@ -299,8 +290,6 @@ class Users {
     async logout(req, res) {
         try {
             const sessionId = req.sessionId;
-            const userId = req.user.id;
-
             res.clearCookie('refresh_token', {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
