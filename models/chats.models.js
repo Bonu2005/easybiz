@@ -451,7 +451,7 @@ class Chats {
                 return res.status(400).json({ message: "No file uploaded" });
             }
 
-            const fileUrl = `http://localhost:3300/users/file/${req.file.filename}`;
+            const fileUrl = `http://localhost:3300/chats/file/${req.file.filename}`;
             return res.status(201).json({
                 message: "File uploaded successfully",
                 mediaUrl: fileUrl
